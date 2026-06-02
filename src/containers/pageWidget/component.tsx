@@ -9,12 +9,30 @@ import { Trans } from "react-i18next";
 import { getBatchTrans, getWordDefinitions } from "../../utils/request/reader";
 import { detectLocalLanguage } from "../../utils/common";
 import toast from "react-hot-toast";
+
+const BATCH_TRANSLATION_STABLE_DELAY = 1000;
+const BATCH_TRANSLATION_MAX_RETRIES = 3;
+const BATCH_TRANSLATION_RETRY_DELAYS = [1200, 2500, 5000];
+
+type BatchTranslationJob = {
+  requestId: number;
+  rendition: any;
+  texts: string[];
+  targetLang: string;
+  retryCount: number;
+};
+
 class Background extends React.Component<BackgroundProps, BackgroundState> {
   isFirst: Boolean;
   timeInterval: any;
   lastBatchTranslationTriggerAt: number;
   batchTranslationLock: Promise<any>;
   batchTranslationResultCache: Map<string, string>;
+  batchTranslationDebounceTimer: any;
+  batchTranslationRetryTimers: any[];
+  batchTranslationRequestId: number;
+  pendingBatchTranslationJob: BatchTranslationJob | null;
+  isBatchTranslationWorkerRunning: boolean;
   constructor(props: any) {
     super(props);
     this.state = {
@@ -28,6 +46,11 @@ class Background extends React.Component<BackgroundProps, BackgroundState> {
     this.lastBatchTranslationTriggerAt = 0;
     this.batchTranslationLock = Promise.resolve();
     this.batchTranslationResultCache = new Map();
+    this.batchTranslationDebounceTimer = null;
+    this.batchTranslationRetryTimers = [];
+    this.batchTranslationRequestId = 0;
+    this.pendingBatchTranslationJob = null;
+    this.isBatchTranslationWorkerRunning = false;
   }
 
   getFormattedTime() {
@@ -49,6 +72,11 @@ class Background extends React.Component<BackgroundProps, BackgroundState> {
     if (this.timeInterval) {
       clearInterval(this.timeInterval);
     }
+    if (this.batchTranslationDebounceTimer) {
+      clearTimeout(this.batchTranslationDebounceTimer);
+    }
+    this.clearBatchTranslationRetryTimers();
+    this.pendingBatchTranslationJob = null;
   }
 
   async UNSAFE_componentWillReceiveProps(nextProps: BackgroundProps) {
@@ -56,11 +84,11 @@ class Background extends React.Component<BackgroundProps, BackgroundState> {
       await this.handlePageNum(nextProps.htmlBook.rendition);
       nextProps.htmlBook.rendition.on("page-changed", async () => {
         await this.handlePageNum(nextProps.htmlBook.rendition);
-        await this.handleBatchTranslation(nextProps.htmlBook.rendition);
+        this.handleBatchTranslation(nextProps.htmlBook.rendition);
       });
       nextProps.htmlBook.rendition.on("rendered", async () => {
         await this.handlePageNum(nextProps.htmlBook.rendition);
-        await this.handleBatchTranslation(nextProps.htmlBook.rendition);
+        this.handleBatchTranslation(nextProps.htmlBook.rendition);
         await this.handleWordDefinition(nextProps.htmlBook.rendition);
       });
     }
@@ -138,7 +166,12 @@ class Background extends React.Component<BackgroundProps, BackgroundState> {
     );
   }
 
-  async handleBatchTranslation(rendition) {
+  clearBatchTranslationRetryTimers() {
+    this.batchTranslationRetryTimers.forEach((timer) => clearTimeout(timer));
+    this.batchTranslationRetryTimers = [];
+  }
+
+  isBatchTranslationEnabled() {
     if (
       !ConfigService.getAllListConfig("fullTranslationBooks").includes(
         this.props.currentBook.key
@@ -146,15 +179,17 @@ class Background extends React.Component<BackgroundProps, BackgroundState> {
       ConfigService.getReaderConfig("fullTranslationMode") === "no" ||
       !this.props.isAuthed
     ) {
-      return;
+      return false;
     }
+    return true;
+  }
 
-    let batchTransTexts = await rendition.getBatchTransTexts();
-    if (!batchTransTexts || batchTransTexts.length === 0) {
-      return;
-    }
-
-    const targetLang = this.getBatchTranslationTargetLang();
+  applyCachedBatchTranslations(
+    rendition: any,
+    batchTransTexts: string[],
+    targetLang: string,
+    requestId: number
+  ) {
     const cachedTexts: string[] = [];
     const cachedTranslations: string[] = [];
     const missingTexts: string[] = [];
@@ -172,23 +207,139 @@ class Background extends React.Component<BackgroundProps, BackgroundState> {
       }
     });
 
-    if (cachedTexts.length > 0) {
+    if (
+      cachedTexts.length > 0 &&
+      requestId === this.batchTranslationRequestId
+    ) {
       rendition.handleBatchTransResult(cachedTexts, cachedTranslations);
     }
+
+    return missingTexts;
+  }
+
+  async prepareCurrentBatchTranslationJob(
+    rendition: any,
+    requestId: number,
+    retryCount = 0
+  ) {
+    if (!this.isBatchTranslationEnabled()) {
+      return null;
+    }
+    if (requestId !== this.batchTranslationRequestId) {
+      return null;
+    }
+
+    const batchTransTexts = await rendition.getBatchTransTexts();
+    if (
+      requestId !== this.batchTranslationRequestId ||
+      !batchTransTexts ||
+      batchTransTexts.length === 0
+    ) {
+      return null;
+    }
+
+    const targetLang = this.getBatchTranslationTargetLang();
+    const missingTexts = this.applyCachedBatchTranslations(
+      rendition,
+      batchTransTexts,
+      targetLang,
+      requestId
+    );
+
     if (missingTexts.length === 0) {
+      return null;
+    }
+
+    return {
+      requestId,
+      rendition,
+      texts: missingTexts,
+      targetLang,
+      retryCount,
+    };
+  }
+
+  async enqueueCurrentBatchTranslation(
+    rendition: any,
+    requestId: number,
+    retryCount = 0
+  ) {
+    const job = await this.prepareCurrentBatchTranslationJob(
+      rendition,
+      requestId,
+      retryCount
+    );
+    if (!job) {
       return;
     }
 
-    const prev = this.batchTranslationLock;
-    const next = prev.then(async () => {
+    this.pendingBatchTranslationJob = job;
+    this.runBatchTranslationWorker();
+  }
+
+  scheduleBatchTranslationRetry(job: BatchTranslationJob) {
+    if (
+      job.requestId !== this.batchTranslationRequestId ||
+      job.retryCount >= BATCH_TRANSLATION_MAX_RETRIES
+    ) {
+      return;
+    }
+
+    const delay =
+      BATCH_TRANSLATION_RETRY_DELAYS[job.retryCount] ||
+      BATCH_TRANSLATION_RETRY_DELAYS[
+        BATCH_TRANSLATION_RETRY_DELAYS.length - 1
+      ];
+    const timer = setTimeout(() => {
+      this.batchTranslationRetryTimers = this.batchTranslationRetryTimers.filter(
+        (item) => item !== timer
+      );
+      if (job.requestId !== this.batchTranslationRequestId) {
+        return;
+      }
+      this.enqueueCurrentBatchTranslation(
+        job.rendition,
+        job.requestId,
+        job.retryCount + 1
+      );
+    }, delay);
+    this.batchTranslationRetryTimers.push(timer);
+  }
+
+  async runBatchTranslationWorker() {
+    if (this.isBatchTranslationWorkerRunning) {
+      return;
+    }
+    this.isBatchTranslationWorkerRunning = true;
+
+    try {
+      while (this.pendingBatchTranslationJob) {
+        const job = this.pendingBatchTranslationJob;
+        this.pendingBatchTranslationJob = null;
+        await this.executeBatchTranslationJob(job);
+      }
+    } finally {
+      this.isBatchTranslationWorkerRunning = false;
+      if (this.pendingBatchTranslationJob) {
+        this.runBatchTranslationWorker();
+      }
+    }
+  }
+
+  async executeBatchTranslationJob(job: BatchTranslationJob) {
+    const run = async () => {
+      if (job.requestId !== this.batchTranslationRequestId) {
+        return;
+      }
+
       const stillMissingTexts: string[] = [];
       const newlyCachedTexts: string[] = [];
       const newlyCachedTranslations: string[] = [];
 
-      missingTexts.forEach((text: string) => {
+      job.texts.forEach((text: string) => {
         const cachedTranslation = this.getCachedBatchTranslation(
           text,
-          targetLang
+          job.targetLang
         );
         if (cachedTranslation) {
           newlyCachedTexts.push(text);
@@ -198,8 +349,11 @@ class Background extends React.Component<BackgroundProps, BackgroundState> {
         }
       });
 
-      if (newlyCachedTexts.length > 0) {
-        rendition.handleBatchTransResult(
+      if (
+        newlyCachedTexts.length > 0 &&
+        job.requestId === this.batchTranslationRequestId
+      ) {
+        job.rendition.handleBatchTransResult(
           newlyCachedTexts,
           newlyCachedTranslations
         );
@@ -208,27 +362,64 @@ class Background extends React.Component<BackgroundProps, BackgroundState> {
         return;
       }
 
-      if (stillMissingTexts.length > 0) {
-        let res = await getBatchTrans(
+      try {
+        const res = await getBatchTrans(
           stillMissingTexts,
           "Automatic",
-          targetLang,
+          job.targetLang,
           { bookKey: this.props.currentBook.key }
         );
-        if (res && res.data && res.data.texts) {
+
+        if (
+          res &&
+          res.code === 200 &&
+          res.data &&
+          Array.isArray(res.data.texts) &&
+          res.data.texts.length === stillMissingTexts.length
+        ) {
           res.data.texts.forEach((translatedText: string, index: number) => {
             this.setCachedBatchTranslation(
               stillMissingTexts[index],
               translatedText,
-              targetLang
+              job.targetLang
             );
           });
-          rendition.handleBatchTransResult(stillMissingTexts, res.data.texts);
+          if (job.requestId === this.batchTranslationRequestId) {
+            job.rendition.handleBatchTransResult(
+              stillMissingTexts,
+              res.data.texts
+            );
+          }
+        } else {
+          this.scheduleBatchTranslationRetry(job);
         }
+      } catch (error) {
+        console.error("Batch translation failed:", error);
+        this.scheduleBatchTranslationRetry(job);
       }
-    });
+    };
+
+    const next = this.batchTranslationLock.then(run, run);
     this.batchTranslationLock = next.catch(() => {});
     return next;
+  }
+
+  handleBatchTranslation(rendition) {
+    if (!this.isBatchTranslationEnabled()) {
+      return;
+    }
+
+    this.batchTranslationRequestId += 1;
+    const requestId = this.batchTranslationRequestId;
+    this.pendingBatchTranslationJob = null;
+    this.clearBatchTranslationRetryTimers();
+
+    if (this.batchTranslationDebounceTimer) {
+      clearTimeout(this.batchTranslationDebounceTimer);
+    }
+    this.batchTranslationDebounceTimer = setTimeout(() => {
+      this.enqueueCurrentBatchTranslation(rendition, requestId);
+    }, BATCH_TRANSLATION_STABLE_DELAY);
   }
   async handleWordDefinition(rendition) {
     const prev = this.batchTranslationLock;

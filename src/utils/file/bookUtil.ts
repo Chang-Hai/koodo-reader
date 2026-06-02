@@ -163,7 +163,7 @@ class BookUtil {
     }
     let ref = book.format.toLowerCase();
 
-    window.open(
+    window.location.assign(
       `${window.location.href.split("#")[0]}#/${ref}/${book.key}?title=${
         book.name
       }&file=${book.key}`
