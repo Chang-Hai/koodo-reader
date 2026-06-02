@@ -1,0 +1,19 @@
+{
+  "name": "Koodo Reader",
+  "short_name": "Koodo",
+  "description": "Private self-hosted ebook reader",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f8f7f3",
+  "theme_color": "#f8f7f3",
+  "icons": [
+    {
+      "src": "assets/icon.png",
+      "sizes": "256x256",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

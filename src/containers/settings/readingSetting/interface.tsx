@@ -8,21 +8,15 @@ export interface SettingInfoProps extends RouteComponentProps<any> {
 export interface SettingInfoState {
   isTouch: boolean;
   isPreventTrigger: boolean;
-  isMergeWord: boolean;
   isOpenBook: boolean;
   isDisablePopup: boolean;
   isDisableAutoScroll: boolean;
   isManualScroll: boolean;
   isDisableTrashBin: boolean;
   isDeleteShelfBook: boolean;
-  isPreventSleep: boolean;
-  isOpenInMain: boolean;
   isPrecacheBook: boolean;
   isOverwriteLink: boolean;
   isOverwriteText: boolean;
-  isAutoFullscreen: boolean;
-  isAutoMaximize: boolean;
   isHideShelfBook: boolean;
-  isPreventAdd: boolean;
   isLemmatizeWord: boolean;
 }

@@ -1,7 +1,6 @@
 import React from "react";
 import { SettingInfoProps, SettingInfoState } from "./interface";
 import { Trans } from "react-i18next";
-import { isElectron } from "react-device-detect";
 import _ from "underscore";
 import toast from "react-hot-toast";
 import {
@@ -32,6 +31,7 @@ import { handleClearToken, handleExitApp } from "../../../utils/request/common";
 import copyTextToClipboard from "copy-text-to-clipboard";
 import { resetReaderRequest } from "../../../utils/request/reader";
 import { resetThirdpartyRequest } from "../../../utils/request/thirdparty";
+import { isSelfHostedWebProUnlocked } from "../../../utils/selfHostedWebUnlock";
 declare var window: any;
 class AccountSetting extends React.Component<
   SettingInfoProps,
@@ -60,6 +60,10 @@ class AccountSetting extends React.Component<
     nextProps: Readonly<SettingInfoProps>,
     nextContext: any
   ): void {
+    if (isSelfHostedWebProUnlocked()) {
+      return;
+    }
+
     if (
       nextProps.isShowSupport &&
       nextProps.isShowSupport !== this.props.isShowSupport

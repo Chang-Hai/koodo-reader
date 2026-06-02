@@ -12,13 +12,11 @@ import {
   exportNotes,
   getBookName,
 } from "../../../utils/file/export";
-import { isElectron } from "react-device-detect";
 import DatabaseService from "../../../utils/storage/databaseService";
 import { ConfigService } from "../../../assets/lib/kookit-extra-browser.min";
 import * as Kookit from "../../../assets/lib/kookit.min";
-import { getPdfPassword, getStorageLocation } from "../../../utils/common";
+import { getPdfPassword } from "../../../utils/common";
 import { BookHelper } from "../../../assets/lib/kookit.min";
-declare var window: any;
 class MoreAction extends React.Component<MoreActionProps, MoreActionState> {
   constructor(props: MoreActionProps) {
     super(props);
@@ -183,14 +181,6 @@ class MoreAction extends React.Component<MoreActionProps, MoreActionState> {
                     new Blob([byteArray], { type: mime }),
                     `${this.props.currentBook.name}.${ext}`
                   );
-                } else if (isElectron) {
-                  const fs = window.require("fs");
-                  const ext = cover.split(".").pop() || "jpg";
-                  const buffer = fs.readFileSync(cover);
-                  saveAs(
-                    new Blob([buffer], { type: `image/${ext}` }),
-                    `${this.props.currentBook.name}.${ext}`
-                  );
                 }
                 toast.success(this.props.t("Export successful"));
               }}
@@ -341,49 +331,6 @@ class MoreAction extends React.Component<MoreActionProps, MoreActionState> {
                 <Trans>Copy book link</Trans>
               </p>
             </div>
-            {isElectron && (
-              <div
-                className="action-dialog-edit"
-                style={{ paddingLeft: "0px" }}
-                onClick={async () => {
-                  const fs = window.require("fs");
-                  const path = window.require("path");
-                  const localBookPath = this.props.currentBook.path;
-
-                  const libraryBookPath = path.join(
-                    getStorageLocation() || "",
-                    `book`,
-                    this.props.currentBook.key +
-                      "." +
-                      this.props.currentBook.format.toLowerCase()
-                  );
-                  if (
-                    !fs.existsSync(localBookPath) &&
-                    !fs.existsSync(libraryBookPath)
-                  ) {
-                    toast.error(this.props.t("No path found for this book"));
-                    return;
-                  }
-                  if (fs.existsSync(localBookPath)) {
-                    const { ipcRenderer } = window.require("electron");
-                    ipcRenderer.invoke("open-explorer-folder", {
-                      path: localBookPath,
-                      isFolder: false,
-                    });
-                  } else {
-                    const { ipcRenderer } = window.require("electron");
-                    ipcRenderer.invoke("open-explorer-folder", {
-                      path: libraryBookPath,
-                      isFolder: false,
-                    });
-                  }
-                }}
-              >
-                <p className="action-name">
-                  <Trans>Locate in the folder</Trans>
-                </p>
-              </div>
-            )}
           </div>
         </div>
         {this.renderFormatSubmenu("notes")}

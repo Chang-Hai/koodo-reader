@@ -22,6 +22,7 @@ import {
   getTempToken,
   getUserRequest,
 } from "../../../utils/request/user";
+import { isSelfHostedWebProUnlocked } from "../../../utils/selfHostedWebUnlock";
 class SupportDialog extends React.Component<
   SupportDialogProps,
   SupportDialogState
@@ -40,6 +41,10 @@ class SupportDialog extends React.Component<
   };
 
   render() {
+    if (isSelfHostedWebProUnlocked()) {
+      return null;
+    }
+
     return (
       <>
         {this.props.isAuthed && this.props.isShowSupport && (

@@ -5,13 +5,9 @@ import { Trans } from "react-i18next";
 import { ImportDialogProps, ImportDialogState } from "./interface";
 import _ from "underscore";
 import toast from "react-hot-toast";
-import { isElectron } from "react-device-detect";
-import { getCloudConfig } from "../../../utils/file/common";
 import SyncService from "../../../utils/storage/syncService";
 import {
   getServerRegion,
-  getStorageLocation,
-  openExternalUrl,
   openInBrowser,
   showDownloadProgress,
   supportedFormats,
@@ -80,20 +76,8 @@ class ImportDialog extends React.Component<
   listFolder = async (drive: string, path: string) => {
     this.setState({ isWaitList: true });
     let fileInfoList = [];
-    if (isElectron) {
-      const { ipcRenderer } = window.require("electron");
-      let tokenConfig = await getCloudConfig(drive);
-      fileInfoList = await ipcRenderer.invoke("picker-list", {
-        ...tokenConfig,
-        baseFolder: "",
-        service: drive,
-        currentPath: path,
-        storagePath: getStorageLocation(),
-      });
-    } else {
-      let pickerUtil = await SyncService.getPickerUtil(drive);
-      fileInfoList = await pickerUtil.listFileInfos(path);
-    }
+    let pickerUtil = await SyncService.getPickerUtil(drive);
+    fileInfoList = await pickerUtil.listFileInfos(path);
     this.setState({
       currentFileList: fileInfoList,
       isWaitList: false,
@@ -132,58 +116,21 @@ class ImportDialog extends React.Component<
     });
     let destPath = "temp/" + item.path.split("/").pop();
     let file: any = null;
-    if (isElectron) {
-      const fs = window.require("fs");
-      const path = window.require("path");
-      const dataPath = getStorageLocation() || "";
-      const { ipcRenderer } = window.require("electron");
-      let tokenConfig = await getCloudConfig(this.state.currentDrive);
-      if (!fs.existsSync(path.join(dataPath, "temp"))) {
-        fs.mkdirSync(path.join(dataPath, "temp"), {
-          recursive: true,
-        });
-      }
-      let timer = showDownloadProgress(
-        this.state.currentDrive,
-        "picker",
-        item.size
-      );
-      await ipcRenderer.invoke("picker-download", {
-        ...tokenConfig,
-        baseFolder: "",
-        sourcePath: item.path.substring(1),
-        destPath: destPath,
-        service: this.state.currentDrive,
-        storagePath: dataPath,
-      });
-      clearInterval(timer);
-      toast.dismiss("offline-book");
-      const buffer = fs.readFileSync(path.join(dataPath, destPath));
+    let timer = showDownloadProgress(
+      this.state.currentDrive,
+      "picker",
+      item.size
+    );
+    let pickerUtil = await SyncService.getPickerUtil(this.state.currentDrive);
 
-      let arraybuffer = new Uint8Array(buffer).buffer;
-      let blob = new Blob([arraybuffer]);
-      let fileName = path.basename(item.path);
-      file = new File([blob], fileName);
-      file.path = item.path;
-      // Clean up the temp file after import
-      fs.unlinkSync(path.join(dataPath, destPath));
-    } else {
-      let timer = showDownloadProgress(
-        this.state.currentDrive,
-        "picker",
-        item.size
-      );
-      let pickerUtil = await SyncService.getPickerUtil(this.state.currentDrive);
-
-      let arraybuffer = await pickerUtil.remote.downloadFile(
-        item.path.substring(1)
-      );
-      clearInterval(timer);
-      toast.dismiss("offline-book");
-      let blob = new Blob([arraybuffer]);
-      let fileName = item.path.split("/").pop() || "file";
-      file = new File([blob], fileName);
-    }
+    let arraybuffer = await pickerUtil.remote.downloadFile(
+      item.path.substring(1)
+    );
+    clearInterval(timer);
+    toast.dismiss("offline-book");
+    let blob = new Blob([arraybuffer]);
+    let fileName = item.path.split("/").pop() || "file";
+    file = new File([blob], fileName);
     toast.dismiss("importing");
     await this.props.importBookFunc(file);
   };
@@ -234,22 +181,8 @@ class ImportDialog extends React.Component<
     try {
       let fileInfoList: FileInfo[] = [];
 
-      if (isElectron) {
-        const { ipcRenderer } = window.require("electron");
-        let tokenConfig = await getCloudConfig(this.state.currentDrive);
-        fileInfoList = await ipcRenderer.invoke("picker-list", {
-          ...tokenConfig,
-          baseFolder: "",
-          service: this.state.currentDrive,
-          currentPath: folderPath,
-          storagePath: getStorageLocation(),
-        });
-      } else {
-        let pickerUtil = await SyncService.getPickerUtil(
-          this.state.currentDrive
-        );
-        fileInfoList = await pickerUtil.listFileInfos(folderPath);
-      }
+      let pickerUtil = await SyncService.getPickerUtil(this.state.currentDrive);
+      fileInfoList = await pickerUtil.listFileInfos(folderPath);
 
       for (const item of fileInfoList) {
         const fullPath = folderPath + "/" + item.name;
@@ -277,14 +210,6 @@ class ImportDialog extends React.Component<
   // 新增Google Picker处理方法
   handleGooglePicker = async () => {
     try {
-      if (isElectron) {
-        toast.loading(
-          this.props.t("Please select the books in the Google Drive Picker"),
-          {
-            id: "google-picker",
-          }
-        );
-      }
       let pickerUtil: any = await SyncService.getPickerUtil("google");
       this.googlePickerUtil = new GooglePickerUtil({
         accessToken: pickerUtil.remote.config.access_token,
@@ -293,22 +218,7 @@ class ImportDialog extends React.Component<
       });
       toast.dismiss("google-picker");
 
-      if (isElectron) {
-        openExternalUrl(
-          "https://dl.koodoreader.com/websites/google-picker.html?access_token=" +
-            pickerUtil.remote.config.access_token
-        );
-        const { ipcRenderer } = window.require("electron");
-        ipcRenderer.once("picker-finished", async (event: any, config: any) => {
-          if (config && config.action === "picked" && config.docs) {
-            for (const file of config.docs) {
-              await this.handleImportGoogleFile(file);
-            }
-          }
-        });
-      } else {
-        await this.googlePickerUtil.createPicker(this.handlePickerCallback);
-      }
+      await this.googlePickerUtil.createPicker(this.handlePickerCallback);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error));
       console.error("Error creating Google Picker:", error);
@@ -381,7 +291,7 @@ class ImportDialog extends React.Component<
                 .filter(
                   (item) =>
                     !item.scoped &&
-                    item.support.includes(isElectron ? "desktop" : "browser")
+                    item.support.includes("browser")
                 )
                 .map((item) => (
                   <div

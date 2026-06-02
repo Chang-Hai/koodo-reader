@@ -3,23 +3,17 @@ import { SettingInfoProps, SettingInfoState } from "./interface";
 import { Trans } from "react-i18next";
 import {
   clearAllData,
-  generateSyncRecord,
   getStorageLocation,
   getWebsiteUrl,
   reloadManager,
-  vexComfirmAsync,
   vexOpenAsync,
   vexPromptAsync,
 } from "../../../utils/common";
 
 import toast from "react-hot-toast";
-import { isElectron } from "react-device-detect";
 import { LocalFileManager } from "../../../utils/file/localFile";
 import { ConfigService } from "../../../assets/lib/kookit-extra-browser.min";
-import { changeLibrary, changePath } from "../../../utils/file/common";
-import { getSnapshots } from "../../../utils/file/backup";
 import { verifyAndBuildKOReaderSyncConfig } from "../../../utils/file/koReaderSync";
-import { restoreFromSnapshot } from "../../../utils/file/restore";
 import {
   exportBooks,
   exportDictionaryHistory,
@@ -41,8 +35,6 @@ class DataSetting extends React.Component<SettingInfoProps, SettingInfoState> {
       snapshotList: [],
       exportNotesFormat: "",
       exportHighlightsFormat: "",
-      isEnableDiscordRPC:
-        ConfigService.getReaderConfig("isEnableDiscordRPC") === "yes",
       isEnableKoReaderSync:
         ConfigService.getReaderConfig("isEnableKoReaderSync") === "yes",
       isEnableNotionSync:
@@ -51,8 +43,6 @@ class DataSetting extends React.Component<SettingInfoProps, SettingInfoState> {
         ConfigService.getReaderConfig("isEnableYuqueSync") === "yes",
       isEnableReadwiseSync:
         ConfigService.getReaderConfig("isEnableReadwiseSync") === "yes",
-      isEnableMarkdownSync:
-        ConfigService.getReaderConfig("isEnableMarkdownSync") === "yes",
       isEnableEudicSync:
         ConfigService.getReaderConfig("isEnableEudicSync") === "yes",
       isEnableAnkiSync:
@@ -60,18 +50,11 @@ class DataSetting extends React.Component<SettingInfoProps, SettingInfoState> {
     };
   }
   async componentDidMount() {
-    if (!isElectron) {
-      const status = await LocalFileManager.getPermissionStatus();
-      this.setState({
-        storageLocation: status.directoryName || "",
-        snapshotList: [],
-      });
-    }
-    if (isElectron) {
-      this.setState({
-        snapshotList: getSnapshots(),
-      });
-    }
+    const status = await LocalFileManager.getPermissionStatus();
+    this.setState({
+      storageLocation: status.directoryName || "",
+      snapshotList: [],
+    });
   }
   handleSetting = (stateName: string) => {
     this.setState({ [stateName]: !this.state[stateName] } as any);
@@ -194,22 +177,6 @@ class DataSetting extends React.Component<SettingInfoProps, SettingInfoState> {
     const currentlyEnabled = this.state[item.propName];
 
     if (!currentlyEnabled && item.requiresAuth) {
-      // Special case: Markdown sync uses a folder picker in Electron
-      if (item.propName === "isEnableMarkdownSync" && isElectron) {
-        const { ipcRenderer } = window.require("electron");
-        const folder = await ipcRenderer.invoke("select-path");
-        if (!folder) return;
-        ConfigService.setObjectConfig(
-          item.authConfigKey,
-          { folder: folder },
-          "thirdpartyToken"
-        );
-        this.setState({ [item.propName]: true } as any);
-        ConfigService.setReaderConfig(item.propName, "yes");
-        toast.success(this.props.t("Change successful"));
-        return;
-      }
-
       // Enabling: prompt for auth credentials
       const existingConfig = ConfigService.getObjectConfig(
         item.authConfigKey,
@@ -276,10 +243,7 @@ class DataSetting extends React.Component<SettingInfoProps, SettingInfoState> {
   renderNoteSyncOptions = () => {
     return noteSyncSettingList.map((item) => {
       return (
-        <div
-          style={item.isElectron ? (isElectron ? {} : { display: "none" }) : {}}
-          key={item.propName}
-        >
+        <div key={item.propName}>
           <div className="setting-dialog-new-title" key={item.title}>
             <span style={{ width: "calc(100% - 100px)" }}>
               <Trans>{item.title}</Trans>
@@ -310,26 +274,6 @@ class DataSetting extends React.Component<SettingInfoProps, SettingInfoState> {
           <p className="setting-option-subtitle">
             <Trans>{item.desc}</Trans>
           </p>
-          {item.propName === "isEnableMarkdownSync" &&
-            this.state[item.propName] &&
-            isElectron &&
-            (() => {
-              let folder = "";
-
-              const config = ConfigService.getObjectConfig(
-                item.authConfigKey,
-                "thirdpartyToken",
-                {}
-              );
-              if (config && Object.keys(config).length > 0) {
-                const parsed = config;
-                folder = parsed["folder"] || "";
-              }
-
-              return folder ? (
-                <div className="setting-dialog-location-title">{folder}</div>
-              ) : null;
-            })()}
         </div>
       );
     });
@@ -377,10 +321,7 @@ class DataSetting extends React.Component<SettingInfoProps, SettingInfoState> {
   renderSwitchOption = (optionList: any[]) => {
     return optionList.map((item) => {
       return (
-        <div
-          style={item.isElectron ? (isElectron ? {} : { display: "none" }) : {}}
-          key={item.propName}
-        >
+        <div key={item.propName}>
           <div className="setting-dialog-new-title" key={item.title}>
             <span style={{ width: "calc(100% - 100px)" }}>
               <Trans>{item.title}</Trans>
@@ -416,122 +357,35 @@ class DataSetting extends React.Component<SettingInfoProps, SettingInfoState> {
     });
   };
 
-  handleChangeLocation = async () => {
-    const { ipcRenderer } = window.require("electron");
-    const newPath = await ipcRenderer.invoke("select-path");
-    if (!newPath) {
-      return;
-    }
-    let isSuccess = await changePath(newPath);
-    if (!isSuccess) {
-      toast.error(this.props.t("Change failed"));
-      return;
-    }
-    ConfigService.setItem("storageLocation", newPath);
-    this.setState({ storageLocation: newPath });
-    let targetDrive = ConfigService.getItem("defaultSyncOption");
-    await ipcRenderer.invoke("cloud-close", {
-      service: targetDrive,
-    });
-
-    toast.success(this.props.t("Change successful"));
-    this.props.handleFetchBooks();
-  };
   handleSwitchLibrary = async () => {
-    if (isElectron) {
-      const { ipcRenderer } = window.require("electron");
-      const newPath = await ipcRenderer.invoke("select-path");
-      if (!newPath) {
-        return;
-      }
-      let isSuccess = await changeLibrary(newPath);
-      if (!isSuccess) {
-        toast.error(this.props.t("Switch failed"));
-        return;
-      }
-      ConfigService.setItem("storageLocation", newPath);
-      this.setState({ storageLocation: newPath });
-      try {
-        let fs = window.require("fs");
-        let text = fs.readFileSync(
-          window.require("path").join(newPath, "config", "config.json"),
-          "utf-8"
-        );
-        let config = JSON.parse(text);
-        for (let key in config) {
-          ConfigService.setItem(key, config[key]);
-        }
-      } catch (error) {
-        console.error("Error reading config.json:", error);
-      }
-      let targetDrive = ConfigService.getItem("defaultSyncOption");
-      await ipcRenderer.invoke("cloud-close", {
-        service: targetDrive,
-      });
-      toast.success(this.props.t("Switch successful"));
-      this.props.handleFetchBooks();
-      await generateSyncRecord();
-      setTimeout(() => {
-        this.props.history.push("/manager/home");
-      }, 2000);
-    } else {
-      try {
-        const directoryHandle = await LocalFileManager.requestDirectoryAccess();
+    try {
+      const directoryHandle = await LocalFileManager.requestDirectoryAccess();
 
-        if (directoryHandle) {
-          // 成功获取权限
-          ConfigService.setReaderConfig("isUseLocal", "yes");
-          ConfigService.setReaderConfig(
-            "localDirectoryName",
-            directoryHandle.name
-          );
-          this.setState({
-            storageLocation: directoryHandle.name,
-          });
-          toast.success(
-            this.props.t("Local folder access granted successfully")
-          );
-          this.props.handleFetchBooks();
-          setTimeout(() => {
-            this.props.history.push("/manager/home");
-          }, 2000);
-        } else {
-          toast.success(this.props.t("Failed to get folder access permission"));
-        }
-      } catch (error) {
-        toast.error(
-          "Error selecting folder:" +
-            (error instanceof Error ? error.message : String(error))
+      if (directoryHandle) {
+        ConfigService.setReaderConfig("isUseLocal", "yes");
+        ConfigService.setReaderConfig(
+          "localDirectoryName",
+          directoryHandle.name
         );
-        console.error("Error selecting folder:", error);
-        toast.success(this.props.t("Error occurred while selecting folder"));
-      }
-    }
-  };
-  handleRestoreSnapshot = async (event: any) => {
-    let targetFile = event.target.value;
-    if (!targetFile) {
-      return;
-    }
-    let confirm = await vexComfirmAsync(
-      this.props.t(
-        "Restoring from a snapshot will overwrite your current data. Are you sure you want to continue?"
-      )
-    );
-    if (!confirm) {
-      return;
-    }
-    let result = await restoreFromSnapshot(targetFile);
-    if (result) {
-      toast.success(this.props.t("Restore successful"), {
-        id: "restore-snapshot",
-      });
-      this.props.handleFetchBooks();
+        this.setState({
+          storageLocation: directoryHandle.name,
+        });
+        toast.success(this.props.t("Local folder access granted successfully"));
+        this.props.handleFetchBooks();
       setTimeout(() => {
         this.props.history.push("/manager/home");
       }, 2000);
+      } else {
+        toast.success(this.props.t("Failed to get folder access permission"));
+      }
+    } catch (error) {
+      toast.error(
+        "Error selecting folder:" +
+          (error instanceof Error ? error.message : String(error))
+      );
+      console.error("Error selecting folder:", error);
+      toast.success(this.props.t("Error occurred while selecting folder"));
     }
-    event.target.value = "";
   };
   render() {
     return (
@@ -539,67 +393,11 @@ class DataSetting extends React.Component<SettingInfoProps, SettingInfoState> {
         {this.renderSwitchOption(dataSettingList)}
         {this.renderNoteSyncOptions()}
         {this.renderWordSyncOptions()}
-        {isElectron && (
-          <>
-            <div className="setting-dialog-new-title">
-              <Trans>Change storage location</Trans>
-              <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                {" "}
-                <span
-                  className="change-location-button"
-                  onClick={() => {
-                    const { ipcRenderer } = window.require("electron");
-                    ipcRenderer.invoke("open-explorer-folder", {
-                      path: this.state.storageLocation,
-                      isFolder: true,
-                    });
-                  }}
-                  style={{ marginRight: "10px" }}
-                >
-                  <Trans>Locate</Trans>
-                </span>
-                <span
-                  className="change-location-button"
-                  onClick={() => {
-                    this.handleChangeLocation();
-                  }}
-                >
-                  <Trans>Select</Trans>
-                </span>
-              </div>
-            </div>
-            <p className="setting-option-subtitle">
-              <Trans>
-                {
-                  "Modify the storage location of the library, and the library will be moved to the new location. Please ensure that the new folder is empty"
-                }
-              </Trans>
-            </p>
-            <div className="setting-dialog-location-title">
-              {this.state.storageLocation}
-            </div>
-          </>
-        )}
         {this.state.storageLocation && (
           <>
             <div className="setting-dialog-new-title">
               <Trans>Switch Library</Trans>
               <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                {isElectron && (
-                  <span
-                    className="change-location-button"
-                    onClick={() => {
-                      const { ipcRenderer } = window.require("electron");
-                      ipcRenderer.invoke("open-explorer-folder", {
-                        path: this.state.storageLocation,
-                        isFolder: true,
-                      });
-                    }}
-                    style={{ marginRight: "10px" }}
-                  >
-                    <Trans>Locate</Trans>
-                  </span>
-                )}
                 <span
                   className="change-location-button"
                   onClick={() => {
@@ -620,45 +418,6 @@ class DataSetting extends React.Component<SettingInfoProps, SettingInfoState> {
             <div className="setting-dialog-location-title">
               {this.state.storageLocation}
             </div>
-          </>
-        )}
-        {isElectron && (
-          <>
-            <div className="setting-dialog-new-title">
-              <Trans>Restore from snapshots</Trans>
-              <select
-                name=""
-                className="lang-setting-dropdown"
-                onChange={this.handleRestoreSnapshot}
-              >
-                <option value={""} className="lang-setting-option">
-                  {this.props.t("Please select")}
-                </option>
-                {this.state.snapshotList
-                  .map((item) => {
-                    return {
-                      label: new Date(item.time).toLocaleString(),
-                      value: item.file,
-                    };
-                  })
-                  .map((item) => (
-                    <option
-                      value={item.value}
-                      key={item.value}
-                      className="lang-setting-option"
-                    >
-                      {item.label}
-                    </option>
-                  ))}
-              </select>
-            </div>
-            <p className="setting-option-subtitle">
-              <Trans>
-                {
-                  "Each time you open Koodo Reader, it automatically creates a snapshot of your library (excluding books and covers). You can use these snapshots to restore your library to a previous state. Please note that restoring from a snapshot will overwrite your current data"
-                }
-              </Trans>
-            </p>
           </>
         )}
         <div className="setting-dialog-new-title">

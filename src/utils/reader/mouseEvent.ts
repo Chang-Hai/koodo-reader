@@ -1,5 +1,4 @@
 import { ConfigService } from "../../assets/lib/kookit-extra-browser.min";
-import { isElectron } from "react-device-detect";
 import { getIframeDoc, getIframeWin } from "./docUtil";
 import { handleExitFullScreen, handleFullScreen, sleep } from "../common";
 import Hammer from "hammerjs";
@@ -143,12 +142,6 @@ const mouseChrome = async (rendition: any, deltaY: number) => {
 };
 
 const handleShortcut = (event: any) => {
-  if (event.keyCode === 9) {
-    if (isElectron) {
-      event.preventDefault();
-      window.require("electron").ipcRenderer.invoke("hide-reader", "ping");
-    }
-  }
   if (event.keyCode === 27) {
     if (ConfigService.getReaderConfig("isFullscreen") === "yes") {
       ConfigService.setReaderConfig("isFullscreen", "no");
@@ -157,40 +150,20 @@ const handleShortcut = (event: any) => {
       ConfigService.setReaderConfig("isFullscreen", "no");
       window.speechSynthesis && window.speechSynthesis.cancel();
       TTSUtil.pauseAudio();
-      if (isElectron) {
-        if (ConfigService.getReaderConfig("isOpenInMain") === "yes") {
-          window.require("electron").ipcRenderer.invoke("exit-tab", "ping");
-        } else {
-          window.close();
-        }
-      } else {
-        ConfigService.setReaderConfig("isFinishWebReading", "yes");
-        window.close();
-      }
+      ConfigService.setReaderConfig("isFinishWebReading", "yes");
+      window.close();
     }
   }
   if (event.keyCode === 122) {
-    if (isElectron) {
-      event.preventDefault();
-      ConfigService.getReaderConfig("isFullscreen") !== "yes"
-        ? handleFullScreen()
-        : handleExitFullScreen();
+    event.preventDefault();
+    ConfigService.getReaderConfig("isFullscreen") !== "yes"
+      ? handleFullScreen()
+      : handleExitFullScreen();
 
-      if (ConfigService.getReaderConfig("isFullscreen") === "yes") {
-        ConfigService.setReaderConfig("isFullscreen", "no");
-      } else {
-        ConfigService.setReaderConfig("isFullscreen", "yes");
-      }
-    }
-  }
-  if (event.keyCode === 123) {
-    if (isElectron && ConfigService.getReaderConfig("isMergeWord")) {
-      event.preventDefault();
-      ConfigService.setReaderConfig(
-        "isMergeWord",
-        ConfigService.getReaderConfig("isMergeWord") === "yes" ? "no" : "yes"
-      );
-      window.require("electron").ipcRenderer.invoke("switch-moyu", "ping");
+    if (ConfigService.getReaderConfig("isFullscreen") === "yes") {
+      ConfigService.setReaderConfig("isFullscreen", "no");
+    } else {
+      ConfigService.setReaderConfig("isFullscreen", "yes");
     }
   }
   if (event.keyCode === 70 && event.ctrlKey) {
@@ -215,6 +188,78 @@ const gesture = async (rendition: any, type: string) => {
 const handleLocation = (key: string, rendition: any) => {
   let position = rendition.getPosition();
   ConfigService.setObjectConfig(key, position, "recordLocation");
+};
+
+const getEventElement = (target: EventTarget | null): Element | null => {
+  if (!target) return null;
+  const node = target as any;
+  if (node.nodeType === 1) return node as Element;
+  return node.parentElement || null;
+};
+
+const isInteractiveTapTarget = (target: EventTarget | null) => {
+  const element = getEventElement(target);
+  if (!element || typeof element.closest !== "function") return false;
+  return Boolean(
+    element.closest(
+      [
+        "a",
+        "button",
+        "input",
+        "textarea",
+        "select",
+        "option",
+        "label",
+        "summary",
+        "[role='button']",
+        "[role='link']",
+        "[contenteditable='true']",
+        ".kookit-note",
+        ".kookit-note-icon",
+        ".kookit-word-def",
+      ].join(",")
+    )
+  );
+};
+
+const hasActiveSelection = (doc: Document) => {
+  const selection = doc.getSelection();
+  return Boolean(selection && selection.toString().trim());
+};
+
+type TouchStartPoint = {
+  x: number;
+  y: number;
+  time: number;
+  target: EventTarget | null;
+};
+
+const getTapTurnDirection = (
+  doc: Document,
+  event: TouchEvent,
+  touchStart: TouchStartPoint | null
+) => {
+  if (!touchStart) return "";
+  if (event.changedTouches.length !== 1) return "";
+  if (isInteractiveTapTarget(touchStart.target || event.target)) return "";
+  if (hasActiveSelection(doc)) return "";
+
+  const touch = event.changedTouches[0];
+  const moveX = Math.abs(touch.clientX - touchStart.x);
+  const moveY = Math.abs(touch.clientY - touchStart.y);
+  const elapsed = Date.now() - touchStart.time;
+  if (moveX > 14 || moveY > 14 || elapsed > 700) return "";
+
+  const docElement = doc.documentElement;
+  const width =
+    doc.defaultView?.innerWidth ||
+    docElement?.clientWidth ||
+    doc.body?.clientWidth ||
+    0;
+  if (!width) return "";
+  if (touch.clientX < width * 0.45) return "prev";
+  if (touch.clientX > width * 0.55) return "next";
+  return "";
 };
 export const scrollChapter = async (
   element: any,
@@ -325,12 +370,45 @@ export const bindHtmlEvent = (
     });
   }
 
+  let touchStart: TouchStartPoint | null = null;
+  doc.addEventListener(
+    "touchstart",
+    (event) => {
+      if (event.touches.length !== 1) {
+        touchStart = null;
+        return;
+      }
+      const touch = event.touches[0];
+      touchStart = {
+        x: touch.clientX,
+        y: touch.clientY,
+        time: Date.now(),
+        target: event.target,
+      };
+    },
+    { passive: true }
+  );
+
   doc.addEventListener(
     "touchend",
-    async () => {
-      if (lock) return;
+    async (event) => {
+      if (lock) {
+        touchStart = null;
+        return;
+      }
       lock = true;
-      if (readerMode === "scroll") {
+      const tapTurnDirection = getTapTurnDirection(
+        doc,
+        event,
+        touchStart
+      );
+      touchStart = null;
+      if (tapTurnDirection) {
+        event.preventDefault();
+        tapTurnDirection === "prev"
+          ? await rendition.prev()
+          : await rendition.next();
+      } else if (readerMode === "scroll") {
         await sleep(200);
         await rendition.record();
       }

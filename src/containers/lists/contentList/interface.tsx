@@ -6,6 +6,7 @@ export interface ContentListProps {
   currentChapterIndex: number;
   chapters: any;
   htmlBook: HtmlBookModel;
+  isAuthed: boolean;
   renderBookFunc: (id: string) => void;
   handleCurrentChapter: (currentChapter: string) => void;
   handleCurrentChapterIndex: (currentChapterIndex: number) => void;
@@ -17,4 +18,6 @@ export interface ContentListState {
   isCollapsed: boolean;
   isExpandContent: boolean;
   expandedItems: Set<string>;
+  translatedChapterLabels: Record<string, string>;
+  chapterTranslationKey: string;
 }

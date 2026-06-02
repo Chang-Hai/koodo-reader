@@ -1,11 +1,6 @@
-import { isElectron } from "react-device-detect";
-import { getStorageLocation } from "../common";
 import { ConfigService } from "../../assets/lib/kookit-extra-browser.min";
 import { LocalFileManager } from "./localFile";
 import localforage from "localforage";
-import { Buffer } from "buffer";
-
-declare var window: any;
 
 const DICT_FOLDER = "dict";
 
@@ -16,16 +11,8 @@ export interface DictMeta {
 }
 
 class DictUtil {
-  /** Copy dict file directly from a local path (Electron only, avoids loading into memory) */
   static saveDictFromPath(id: string, sourcePath: string): void {
-    const fs = window.require("fs");
-    const path = window.require("path");
-    const ext = sourcePath.split(".").pop()?.toLowerCase() || "mdx";
-    const dir = path.join(getStorageLocation() || "", DICT_FOLDER);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.copyFileSync(sourcePath, path.join(dir, `${id}.${ext}`));
+    return;
   }
 
   /** Save dict file (ArrayBuffer) by id */
@@ -37,80 +24,33 @@ class DictUtil {
     const ext = name.split(".").pop()?.toLowerCase() || "mdx";
     const filename = `${id}.${ext}`;
 
-    if (isElectron) {
-      const fs = window.require("fs");
-      const path = window.require("path");
-      const dir = path.join(getStorageLocation() || "", DICT_FOLDER);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-      fs.writeFileSync(path.join(dir, filename), Buffer.from(arrayBuffer));
+    if (ConfigService.getReaderConfig("isUseLocal") === "yes") {
+      await LocalFileManager.saveFile(filename, arrayBuffer, DICT_FOLDER);
+    } else {
+      await localforage.setItem(`dict_${id}`, arrayBuffer);
     }
   }
 
   /** Delete dict file by id */
   static async deleteDict(id: string): Promise<void> {
-    if (isElectron) {
-      const fs = window.require("fs");
-      const path = window.require("path");
-      const dir = path.join(getStorageLocation() || "", DICT_FOLDER);
-      if (!fs.existsSync(dir)) return;
-      const files: string[] = fs.readdirSync(dir);
-      const file = files.find((f) => f.startsWith(id + "."));
-      if (file) {
-        const filePath = path.join(dir, file);
-        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    if (ConfigService.getReaderConfig("isUseLocal") === "yes") {
+      for (const ext of ["mdx"]) {
+        await LocalFileManager.deleteFile(`${id}.${ext}`, DICT_FOLDER).catch(
+          () => {}
+        );
       }
     } else {
-      if (ConfigService.getReaderConfig("isUseLocal") === "yes") {
-        for (const ext of ["mdx"]) {
-          await LocalFileManager.deleteFile(`${id}.${ext}`, DICT_FOLDER).catch(
-            () => {}
-          );
-        }
-      } else {
-        await localforage.removeItem(`dict_${id}`);
-      }
+      await localforage.removeItem(`dict_${id}`);
     }
   }
 
-  /** Get file path for Electron only */
   static getDictFilePath(id: string): string | null {
-    if (!isElectron) return null;
-    const fs = window.require("fs");
-    const path = window.require("path");
-    const dir = path.join(getStorageLocation() || "", DICT_FOLDER);
-    if (!fs.existsSync(dir)) return null;
-    const files: string[] = fs.readdirSync(dir);
-    const file = files.find((f) => f.startsWith(id + "."));
-    return file ? path.join(dir, file) : null;
+    return null;
   }
 
   /** Look up a word in the local MDX dictionary */
   static async lookupWord(id: string, word: string): Promise<string> {
-    if (isElectron) {
-      try {
-        const filePath = this.getDictFilePath(id);
-        if (!filePath) return "";
-        const { MDX } = window.require("js-mdict");
-        const mdict = new MDX(filePath);
-        const result = mdict.lookup(word);
-        if (
-          !result ||
-          result.definition === null ||
-          result.definition === undefined
-        ) {
-          return "";
-        }
-        return String(result.definition);
-      } catch (e) {
-        console.error("Dict lookup error:", e);
-        return "";
-      }
-    } else {
-      // Browser: js-mdict requires file system access; not supported in web mode
-      return "";
-    }
+    return "";
   }
 
   /** Save dict metadata */

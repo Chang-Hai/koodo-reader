@@ -9,12 +9,10 @@ export interface SettingInfoState {
   snapshotList: { file: string; time: number }[];
   exportNotesFormat: string;
   exportHighlightsFormat: string;
-  isEnableDiscordRPC: boolean;
   isEnableKoReaderSync: boolean;
   isEnableNotionSync: boolean;
   isEnableYuqueSync: boolean;
   isEnableReadwiseSync: boolean;
-  isEnableMarkdownSync: boolean;
   isEnableEudicSync: boolean;
   isEnableAnkiSync: boolean;
   [key: string]: any;

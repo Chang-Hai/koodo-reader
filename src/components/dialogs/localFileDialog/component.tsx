@@ -7,7 +7,6 @@ import animationSuccess from "../../../assets/lotties/success.json";
 import animationSafe from "../../../assets/lotties/safe.json";
 import _ from "underscore";
 import toast from "react-hot-toast";
-import { isElectron } from "react-device-detect";
 import { ConfigService } from "../../../assets/lib/kookit-extra-browser.min";
 import {
   exportToLocalFile,
@@ -30,12 +29,10 @@ class LocalFileDialog extends React.Component<
     };
   }
   async componentDidMount() {
-    if (!isElectron) {
-      const status = await LocalFileManager.getPermissionStatus();
-      this.setState({
-        status,
-      });
-    }
+    const status = await LocalFileManager.getPermissionStatus();
+    this.setState({
+      status,
+    });
   }
   handleClose = () => {
     this.props.handleLocalFileDialog(false);

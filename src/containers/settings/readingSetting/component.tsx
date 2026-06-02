@@ -1,11 +1,9 @@
 import React from "react";
 import { SettingInfoProps, SettingInfoState } from "./interface";
 import { Trans } from "react-i18next";
-import { isElectron } from "react-device-detect";
 import toast from "react-hot-toast";
 import { ConfigService } from "../../../assets/lib/kookit-extra-browser.min";
 import { readingSettingList } from "../../../constants/settingList";
-declare var window: any;
 
 class ReadingSetting extends React.Component<
   SettingInfoProps,
@@ -15,13 +13,8 @@ class ReadingSetting extends React.Component<
     super(props);
     this.state = {
       isTouch: ConfigService.getReaderConfig("isTouch") === "yes",
-      isMergeWord: ConfigService.getReaderConfig("isMergeWord") === "yes",
       isPreventTrigger:
         ConfigService.getReaderConfig("isPreventTrigger") === "yes",
-      isAutoFullscreen:
-        ConfigService.getReaderConfig("isAutoFullscreen") === "yes",
-      isPreventAdd: ConfigService.getReaderConfig("isPreventAdd") === "yes",
-      isAutoMaximize: ConfigService.getReaderConfig("isAutoMaximize") === "yes",
       isLemmatizeWord:
         ConfigService.getReaderConfig("isLemmatizeWord") === "yes",
       isOpenBook: ConfigService.getReaderConfig("isOpenBook") === "yes",
@@ -35,8 +28,6 @@ class ReadingSetting extends React.Component<
         ConfigService.getReaderConfig("isDeleteShelfBook") === "yes",
       isHideShelfBook:
         ConfigService.getReaderConfig("isHideShelfBook") === "yes",
-      isPreventSleep: ConfigService.getReaderConfig("isPreventSleep") === "yes",
-      isOpenInMain: ConfigService.getReaderConfig("isOpenInMain") === "yes",
       isPrecacheBook: ConfigService.getReaderConfig("isPrecacheBook") === "yes",
       isOverwriteText:
         ConfigService.getReaderConfig("isOverwriteText") === "yes",
@@ -64,43 +55,10 @@ class ReadingSetting extends React.Component<
     this.handleRest(this.state[stateName]);
   };
 
-  handleResetReaderPosition = () => {
-    window
-      .require("electron")
-      .ipcRenderer.invoke("reset-reader-position", "ping");
-    toast.success(this.props.t("Reset successful"));
-  };
-
-  handleMergeWord = () => {
-    if (this.state.isOpenInMain && !this.state.isMergeWord) {
-      toast(this.props.t("Please turn off open books in the main window"));
-      return;
-    }
-    if (this.state.isAutoFullscreen && !this.state.isMergeWord) {
-      toast(this.props.t("Please turn off auto open book in full screen"));
-      return;
-    }
-    this.handleSetting("isMergeWord");
-    if (ConfigService.getReaderConfig("isMergeWord") === "yes") {
-      ConfigService.setReaderConfig("isHideBackground", "yes");
-    }
-  };
-
-  handleOpenInMain = () => {
-    if (this.state.isMergeWord && !this.state.isOpenInMain) {
-      toast(this.props.t("Please turn off merge with word first"));
-      return;
-    }
-    this.handleSetting("isOpenInMain");
-  };
-
   renderSwitchOption = (optionList: any[]) => {
     return optionList.map((item) => {
       return (
-        <div
-          style={item.isElectron ? (isElectron ? {} : { display: "none" }) : {}}
-          key={item.propName}
-        >
+        <div key={item.propName}>
           <div className="setting-dialog-new-title" key={item.title}>
             <span style={{ width: "calc(100% - 100px)" }}>
               <Trans>{item.title}</Trans>
@@ -109,17 +67,7 @@ class ReadingSetting extends React.Component<
             <span
               className="single-control-switch"
               onClick={() => {
-                switch (item.propName) {
-                  case "isMergeWord":
-                    this.handleMergeWord();
-                    break;
-                  case "isOpenInMain":
-                    this.handleOpenInMain();
-                    break;
-                  default:
-                    this.handleSetting(item.propName);
-                    break;
-                }
+                this.handleSetting(item.propName);
               }}
               style={this.state[item.propName] ? {} : { opacity: 0.6 }}
             >
@@ -151,22 +99,6 @@ class ReadingSetting extends React.Component<
     return (
       <>
         {this.renderSwitchOption(readingSettingList)}
-        {isElectron && (
-          <>
-            <div className="setting-dialog-new-title">
-              <Trans>Reset reader window's position</Trans>
-
-              <span
-                className="change-location-button"
-                onClick={() => {
-                  this.handleResetReaderPosition();
-                }}
-              >
-                <Trans>Reset</Trans>
-              </span>
-            </div>
-          </>
-        )}
       </>
     );
   }

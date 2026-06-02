@@ -15,11 +15,15 @@ import {
   applyAppBackgroundImage,
 } from "./utils/reader/launchUtil";
 import { migrateThemeConfig } from "./utils/reader/themeUtil";
+import { registerPwaServiceWorker } from "./utils/pwa";
+import { installMobileSelectEnhancer } from "./utils/mobileSelect";
 initTheme();
 initSystemFont();
 migrateThemeConfig();
 applyCustomSystemCSS();
 applyAppBackgroundImage();
+registerPwaServiceWorker();
+installMobileSelectEnhancer();
 const container = document.getElementById("root")!;
 ReactDOM.render(
   <Provider store={store}>

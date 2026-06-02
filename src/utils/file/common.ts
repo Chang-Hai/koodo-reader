@@ -1,9 +1,5 @@
-import { getStorageLocation, prepareThirdConfig } from "../common";
-import CoverUtil from "./coverUtil";
-import {
-  CommonTool,
-  ConfigService,
-} from "../../assets/lib/kookit-extra-browser.min";
+import { prepareThirdConfig } from "../common";
+import { ConfigService } from "../../assets/lib/kookit-extra-browser.min";
 import DatabaseService from "../storage/databaseService";
 import localforage from "localforage";
 import Book from "../../models/Book";
@@ -13,84 +9,27 @@ import DictHistory from "../../models/DictHistory";
 import { decryptToken } from "../request/thirdparty";
 import toast from "react-hot-toast";
 import i18n from "../../i18n";
-declare var window: any;
 
 // File System Access API type declarations
 
 let configCache: any = {};
 let cloudConfigLocks: { [service: string]: Promise<any> } = {};
 export const changePath = async (newPath: string) => {
-  if (isFolderContainsFile(newPath)) {
-    toast.error(i18n.t("Please select an empty folder"));
-    return false;
-  }
-  let oldPath = getStorageLocation() || "";
-  const fs = window.require("fs-extra");
-  let databaseList = CommonTool.databaseList;
-
-  for (let i = 0; i < databaseList.length; i++) {
-    await window.require("electron").ipcRenderer.invoke("close-database", {
-      dbName: databaseList[i],
-      storagePath: getStorageLocation(),
-    });
-  }
-
-  try {
-    await fs.copy(oldPath, newPath);
-    fs.emptyDirSync(oldPath);
-    return true;
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    toast.error(errorMessage);
-    console.error(`Error copying folder: ${error}`);
-    return false;
-  }
+  toast.error(i18n.t("Koodo Reader's web version are limited by the browser"));
+  return false;
 };
 export const changeLibrary = async (newPath: string) => {
-  if (!isKoodoLibrary(newPath)) {
-    toast.error(i18n.t("Please select a valid library"));
-    return false;
-  }
-  let databaseList = CommonTool.databaseList;
-
-  for (let i = 0; i < databaseList.length; i++) {
-    await window.require("electron").ipcRenderer.invoke("close-database", {
-      dbName: databaseList[i],
-      storagePath: getStorageLocation(),
-    });
-  }
-  return true;
+  toast.error(i18n.t("Koodo Reader's web version are limited by the browser"));
+  return false;
 };
 const isFolderContainsFile = (folderPath: string) => {
-  const fs = window.require("fs");
-  if (!fs.existsSync(folderPath)) {
-    return false;
-  }
-  const files = fs.readdirSync(folderPath);
-  return files.length > 0;
+  return false;
 };
 const isKoodoLibrary = (folderPath: string) => {
-  const fs = window.require("fs");
-  if (!fs.existsSync(folderPath)) {
-    return false;
-  }
-  const files = fs.readdirSync(folderPath);
-  return files.includes("config");
+  return false;
 };
 export const getLastSyncTimeFromConfigJson = () => {
-  const fs = window.require("fs");
-  const path = window.require("path");
-  const dataPath = getStorageLocation() || "";
-  if (!fs.existsSync(path.join(dataPath, "config", "config.json"))) {
-    return 0;
-  }
-  let data = fs.readFileSync(
-    path.join(dataPath, "config", "config.json"),
-    "utf-8"
-  );
-
-  const config = JSON.parse(data);
-  return parseInt(config.lastSyncTime || "0");
+  return parseInt(ConfigService.getItem("lastSyncTime") || "0");
 };
 export function getParamsFromUrl() {
   var hashParams: any = {};
@@ -119,30 +58,13 @@ export const upgradeStorage = async (
   handleFinish: () => void = () => {}
 ): Promise<Boolean> => {
   try {
-    let dataPath = getStorageLocation() || "";
-    // ConfigService.setItem("isUpgraded", "yes");
-    //check if folder named cover exsits
-    const fs = window.require("fs");
-    const path = window.require("path");
-    // upgrage cover and book
     if (ConfigService.getItem("isUpgradedStorage") === "yes") {
       return true;
     }
 
-    fs.mkdirSync(path.join(dataPath, "cover"), { recursive: true });
     let books: Book[] | null = await localforage.getItem("books");
     if (books && books.length > 0) {
       for (let i = 0; i < books.length; i++) {
-        let cover = books[i].cover;
-        if (cover) {
-          let result = await CoverUtil.convertCoverBase64(cover);
-          fs.writeFileSync(
-            path.join(dataPath, "cover", `${books[i].key}.${result.extension}`),
-            Buffer.from(result.arrayBuffer)
-          );
-          books[i].cover = "";
-        }
-        //fix sqlite3 text issue
         if (typeof books[i].author !== "string") {
           books[i].author = "";
         }
@@ -150,32 +72,6 @@ export const upgradeStorage = async (
       await DatabaseService.saveAllRecords(books, "books");
     }
 
-    //uprade book files
-    if (fs.existsSync(path.join(dataPath, "book")) && books) {
-      const files = fs.readdirSync(path.join(dataPath, "book"));
-      if (files.length > 0) {
-        for (let i = 0; i < files.length; i++) {
-          let fileName = files[i];
-          let book = books.find((item) => item.key === fileName);
-          if (book) {
-            let newFileName = `${book.key}.${book.format.toLowerCase()}`;
-            fs.renameSync(
-              path.join(dataPath, "book", fileName),
-              path.join(dataPath, "book", newFileName)
-            );
-          }
-          if (fileName.startsWith("cache")) {
-            let newFileName = `${fileName}.zip`;
-            fs.renameSync(
-              path.join(dataPath, "book", fileName),
-              path.join(dataPath, "book", newFileName)
-            );
-          }
-        }
-      }
-    }
-
-    //upgrade plugin
     let plugins =
       ConfigService.getItem("pluginList") !== "{}" &&
       ConfigService.getItem("pluginList")

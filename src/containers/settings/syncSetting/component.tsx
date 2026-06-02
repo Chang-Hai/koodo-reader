@@ -3,14 +3,11 @@ import { SettingInfoProps, SettingInfoState } from "./interface";
 import { Trans } from "react-i18next";
 import i18n from "../../../i18n";
 import { removeCloudConfig } from "../../../utils/file/common";
-import { isElectron } from "react-device-detect";
-import _ from "underscore";
 import { syncSettingList } from "../../../constants/settingList";
 
 import toast from "react-hot-toast";
 import {
   generateSyncRecord,
-  getICloudDrivePath,
   getServerRegion,
   getWebsiteUrl,
   handleContextMenu,
@@ -40,7 +37,6 @@ import { updateUserConfig } from "../../../utils/request/user";
 import BookUtil from "../../../utils/file/bookUtil";
 import Book from "../../../models/Book";
 import ConfigUtil from "../../../utils/file/configUtil";
-declare var window: any;
 class SyncSetting extends React.Component<SettingInfoProps, SettingInfoState> {
   constructor(props: SettingInfoProps) {
     super(props);
@@ -77,10 +73,7 @@ class SyncSetting extends React.Component<SettingInfoProps, SettingInfoState> {
       return;
     }
     if (
-      !driveList
-        .find((item) => item.value === targetDrive)
-        ?.support.includes("browser") &&
-      !isElectron
+      !driveList.find((item) => item.value === targetDrive)?.support.includes("browser")
     ) {
       toast(
         this.props.t(
@@ -95,10 +88,7 @@ class SyncSetting extends React.Component<SettingInfoProps, SettingInfoState> {
       this.props.handleSettingMode("account");
       return;
     }
-    if (
-      !isElectron &&
-      driveList.find((item) => item.value === targetDrive)?.needExtension
-    ) {
+    if (driveList.find((item) => item.value === targetDrive)?.needExtension) {
       let result = await vexComfirmAsync(
         "Due to browser security restrictions, you may not be able to use this data source properly. If you encounter any issues, you can resolve them by installing our browser extension.",
         "Confirm",
@@ -127,52 +117,6 @@ class SyncSetting extends React.Component<SettingInfoProps, SettingInfoState> {
     }
     this.props.handleSettingDrive(targetDrive);
     let settingDrive = targetDrive;
-    if (settingDrive === "icloud") {
-      let drivePath = getICloudDrivePath();
-      if (!drivePath) {
-        toast.error(
-          this.props.t(
-            "Can't find Koodo Reader's folder in the default iCloud path, please make sure iCloud Drive is installed and set up correctly, and you have already synced your library to iCloud Drive on the iOS version first."
-          ),
-          {
-            duration: 6000,
-          }
-        );
-        this.props.handleSettingDrive("");
-        return;
-      }
-      toast.loading(i18n.t("Adding"), { id: "adding-sync-id" });
-      let res = await encryptToken(settingDrive, {
-        iCloudDrivePath: drivePath,
-      });
-      if (res.code === 200) {
-        toast.success(i18n.t("Binding successful"), { id: "adding-sync-id" });
-      } else {
-        toast.error(i18n.t("Binding failed"), { id: "adding-sync-id" });
-        this.props.handleSettingDrive("");
-        return;
-      }
-      SyncService.removeSyncUtil(settingDrive);
-      removeCloudConfig(settingDrive);
-      if (isElectron) {
-        const { ipcRenderer } = window.require("electron");
-        await ipcRenderer.invoke("cloud-close", {
-          service: settingDrive,
-        });
-      }
-      ConfigService.setListConfig(settingDrive, "dataSourceList");
-      toast.success(i18n.t("Binding successful"), { id: "adding-sync-id" });
-      if (this.props.isAuthed && !ConfigService.getItem("defaultSyncOption")) {
-        ConfigService.setItem("defaultSyncOption", settingDrive);
-        if (ConfigService.getReaderConfig("isEnableKoodoSync") === "yes") {
-          resetKoodoSync();
-        }
-        this.props.handleFetchDefaultSyncOption();
-      }
-      this.props.handleFetchDataSourceList();
-      this.props.handleSettingDrive("");
-      return;
-    }
     if (
       settingDrive === "dropbox" ||
       settingDrive === "yandex" ||
@@ -207,12 +151,6 @@ class SyncSetting extends React.Component<SettingInfoProps, SettingInfoState> {
     await TokenService.setToken(targetDrive + "_token", "");
     SyncService.removeSyncUtil(targetDrive);
     removeCloudConfig(targetDrive);
-    if (isElectron) {
-      const { ipcRenderer } = window.require("electron");
-      await ipcRenderer.invoke("cloud-close", {
-        service: targetDrive,
-      });
-    }
     ConfigService.deleteListConfig(targetDrive, "dataSourceList");
     this.props.handleFetchDataSourceList();
     if (targetDrive === ConfigService.getItem("defaultSyncOption")) {
@@ -293,12 +231,6 @@ class SyncSetting extends React.Component<SettingInfoProps, SettingInfoState> {
     }
     SyncService.removeSyncUtil(this.props.settingDrive);
     removeCloudConfig(this.props.settingDrive);
-    if (isElectron) {
-      const { ipcRenderer } = window.require("electron");
-      await ipcRenderer.invoke("cloud-close", {
-        service: this.props.settingDrive,
-      });
-    }
     if (this.props.isAuthed && !ConfigService.getItem("defaultSyncOption")) {
       ConfigService.setItem("defaultSyncOption", this.props.settingDrive);
       if (ConfigService.getReaderConfig("isEnableKoodoSync") === "yes") {
@@ -313,10 +245,7 @@ class SyncSetting extends React.Component<SettingInfoProps, SettingInfoState> {
   renderSwitchOption = (optionList: any[]) => {
     return optionList.map((item) => {
       return (
-        <div
-          style={item.isElectron ? (isElectron ? {} : { display: "none" }) : {}}
-          key={item.propName}
-        >
+        <div key={item.propName}>
           <div className="setting-dialog-new-title" key={item.title}>
             <span style={{ width: "calc(100% - 100px)" }}>
               <Trans>{item.title}</Trans>
@@ -534,7 +463,7 @@ class SyncSetting extends React.Component<SettingInfoProps, SettingInfoState> {
                 />
               </>
             )}
-            {this.props.settingDrive === "webdav" && !isElectron && (
+            {this.props.settingDrive === "webdav" && (
               <div
                 className="token-dialog-tip"
                 style={{
@@ -549,7 +478,7 @@ class SyncSetting extends React.Component<SettingInfoProps, SettingInfoState> {
                 )}
               </div>
             )}
-            {this.props.settingDrive === "docker" && !isElectron && (
+            {this.props.settingDrive === "docker" && (
               <div
                 className="token-dialog-tip"
                 style={{
@@ -564,7 +493,7 @@ class SyncSetting extends React.Component<SettingInfoProps, SettingInfoState> {
                 )}
               </div>
             )}
-            {this.props.settingDrive === "s3compatible" && !isElectron && (
+            {this.props.settingDrive === "s3compatible" && (
               <div
                 className="token-dialog-tip"
                 style={{
@@ -717,19 +646,7 @@ class SyncSetting extends React.Component<SettingInfoProps, SettingInfoState> {
               ...driveList,
             ]
               .filter((item) => !this.props.dataSourceList.includes(item.value))
-              .filter((item) => {
-                if (!isElectron) {
-                  return item.support.includes("browser");
-                } else {
-                  return true;
-                }
-              })
-              .filter((item) => {
-                if (isElectron && process.platform !== "darwin") {
-                  return item.value !== "icloud";
-                }
-                return true;
-              })
+              .filter((item) => item.support.includes("browser"))
               .map((item) => (
                 <option
                   value={item.value}

@@ -14,13 +14,15 @@
 </h1>
 
 <h3 align="center">
-  A cross-platform ebook reader
+  Self-hosted Web ebook reader
 </h3>
 <div align="center">
 
-[Download](https://koodoreader.com/en) | [Preview](https://web.koodoreader.com) | [Roadmap](https://koodoreader.com/en/roadmap) | [Document](https://koodoreader.com/en/document) | [Plugins](https://koodoreader.com/en/plugin)
+[Self-hosted Web Guide](./SELF_HOSTED_WEB.md) | [Upstream Preview](https://web.koodoreader.com) | [Upstream Document](https://koodoreader.com/en/document)
 
 </div>
+
+> This fork keeps only the Web application for private self-hosted testing. Desktop, Electron, mobile, Android/iOS, and Go server artifacts have been removed.
 
 ## Preview
 
@@ -46,15 +48,14 @@
   - Comic book archive (**.cbr**, **.cbz**, **.cbt**, **.cb7**)
   - Rich text (**.md**, **.docx**)
   - HyperText (**.html**, **.xml**, **.xhtml**, **.mhtml**, **.htm**)
-- Platform support: **Windows**, **macOS**, **Linux**, **Android**, **iOS** and **Web**
-- Sync and backup your data with **OneDrive**, **Google Drive**, **Dropbox**, **iCloud**, **MEGA**, **pCloud**, **Yandex Disk**, **Box**, **FTP**, **SFTP**, **WebDAV**, **SMB**, or **Object Storage**
-- Easily import books from **OneDrive**, **Google Drive**, **MEGA**, **Yandex Disk**, **Box**, **FTP**, **SFTP**, **WebDAV**, **SMB**, or **Object Storage**
+- Platform support: **Web only**
+- Sync and backup your data with browser-supported data sources such as **OneDrive**, **Google Drive**, **Dropbox**, **MEGA**, **Box**, **WebDAV**, or **Object Storage**
+- Easily import books from browser-supported cloud storage sources
 - Use your custom AI model to power AI Translation, AI Dictionary, AI Summarization, and AI Encyclopedia
 - Sync reading progress with **KOReader**
-- Sync notes and highlights to thirdparty platforms such as **Readwise**, **Notion**, **Obsidian**, **Joplin**, and more
-- Support local MDX dictionary lookup
+- Sync notes and highlights to thirdparty platforms such as **Readwise** and **Notion**
 - Automatically sync new words to **Anki** and **Eudic** Dictionary
-- Protect your library with multiple security options including password, PIN, Windows Hello, Touch ID, and more
+- Protect your library with browser-compatible security options such as password and PIN
 - One-click export of all books
 - One-click export of notes and highlights, supporting **CSV**, **Markdown**, **HTML**, **TXT**, and other formats
 - Privacy-first design: no tracking services, and no proactive uploading of your reading data or personal information
@@ -63,7 +64,6 @@
 - Support vertical layout book
 - Support reading statistics
 - Built-in **Paddle** and **Tesseract** OCR engines
-- Support library snapshots and version control
 - Single-column, two-column or continuous scrolling layouts
 - Text-to-speech, translation, dictionary, touch screen support, and batch import
 - Add bookmarks, notes, and highlights to your books
@@ -73,30 +73,26 @@
 
 ## Installation
 
-### Desktop version: [Download](https://koodoreader.com/en/download)
-
-### Web version：[Visit](https://web.koodoreader.com)
-
-### Android version：[Download](https://koodoreader.com/en/download)
-
-### iOS version：[Download](https://koodoreader.com/en/download)
-
-### Install with Scoop:
+Build the Web bundle:
 
 ```shell
-scoop bucket add extras
-scoop install extras/koodo-reader
+yarn
+yarn build
 ```
 
-### Install with Homebrew:
+Run with Docker:
 
 ```shell
-brew install --cask koodo-reader
+docker compose up -d --build
 ```
 
-### Install with Docker:
+The container serves the static Web app with Caddy. Set `KOODO_WEB_PORT` to change the host port:
 
-[Installation Guide](https://koodoreader.com/en/deploy-docker)
+```shell
+KOODO_WEB_PORT=8080 docker compose up -d --build
+```
+
+See [SELF_HOSTED_WEB.md](./SELF_HOSTED_WEB.md) for self-hosted deployment notes.
 
 ## Screenshot
 
@@ -148,14 +144,7 @@ Make sure that you have installed yarn and git
    git clone https://github.com/koodo-reader/koodo-reader.git
    ```
 
-2. Enter desktop mode
-
-   ```
-   yarn
-   yarn dev
-   ```
-
-3. Enter web mode
+2. Start Web development mode
 
    ```
    yarn

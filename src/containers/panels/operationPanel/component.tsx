@@ -8,7 +8,6 @@ import { ConfigService } from "../../../assets/lib/kookit-extra-browser.min";
 import { withRouter } from "react-router-dom";
 import toast from "react-hot-toast";
 import TTSUtil from "../../../utils/reader/ttsUtil";
-import { isElectron } from "react-device-detect";
 import { handleExitFullScreen, handleFullScreen } from "../../../utils/common";
 import DatabaseService from "../../../utils/storage/databaseService";
 import BookLocation from "../../../models/BookLocation";
@@ -78,16 +77,8 @@ class OperationPanel extends React.Component<
     if (this.props.htmlBook) {
       this.props.handleHtmlBook(null);
     }
-    if (isElectron) {
-      if (ConfigService.getReaderConfig("isOpenInMain") === "yes") {
-        window.require("electron").ipcRenderer.invoke("exit-tab", "ping");
-      } else {
-        window.close();
-      }
-    } else {
-      ConfigService.setReaderConfig("isFinishWebReading", "yes");
-      window.close();
-    }
+    ConfigService.setReaderConfig("isFinishWebReading", "yes");
+    window.close();
   }
   handleAddBookmark = async () => {
     let bookKey = this.props.currentBook.key;
@@ -229,15 +220,7 @@ class OperationPanel extends React.Component<
         <div
           className="enter-fullscreen-button"
           onClick={() => {
-            if (isElectron) {
-              this.handleScreen();
-            } else {
-              toast(
-                this.props.t(
-                  "Koodo Reader's web version are limited by the browser, for more powerful features, please download the desktop version."
-                )
-              );
-            }
+            this.handleScreen();
           }}
         >
           <div className="operation-button-container">

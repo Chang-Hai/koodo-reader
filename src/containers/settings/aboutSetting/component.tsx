@@ -7,9 +7,6 @@ import packageJson from "../../../../package.json";
 
 import { getWebsiteUrl, openExternalUrl } from "../../../utils/common";
 import copyTextToClipboard from "copy-text-to-clipboard";
-import { isElectron } from "react-device-detect";
-import { checkDeveloperUpdate } from "../../../utils/request/common";
-declare var window: any;
 
 class AboutSetting extends React.Component<SettingInfoProps, SettingInfoState> {
   constructor(props: SettingInfoProps) {
@@ -25,55 +22,6 @@ class AboutSetting extends React.Component<SettingInfoProps, SettingInfoState> {
           <div style={{ display: "flex", alignItems: "center" }}>
             <span>{packageJson.version}</span>
 
-            {isElectron && !(process as any).windowsStore && (
-              <span
-                className="change-location-button"
-                style={{ marginLeft: "10px", cursor: "pointer" }}
-                onClick={async () => {
-                  toast.loading(this.props.t("Checking for update") + "...", {
-                    id: "checking_update",
-                  });
-                  let res = await checkDeveloperUpdate();
-                  const newVersion = res.version;
-                  if (newVersion === packageJson.version) {
-                    toast.success(
-                      this.props.t("You are using the latest version"),
-                      {
-                        id: "checking_update",
-                      }
-                    );
-                  } else {
-                    toast.success(
-                      this.props.t("A new version is available") +
-                        ": " +
-                        newVersion,
-                      {
-                        id: "checking_update",
-                      }
-                    );
-
-                    let lang = "en";
-                    if (
-                      ConfigService.getReaderConfig("lang") &&
-                      ConfigService.getReaderConfig("lang").startsWith("zh")
-                    ) {
-                      lang = "zh";
-                    }
-                    setTimeout(() => {
-                      openExternalUrl(
-                        getWebsiteUrl() +
-                          "/" +
-                          lang +
-                          "/download" +
-                          "?version=developer"
-                      );
-                    }, 1000);
-                  }
-                }}
-              >
-                <Trans>Check for update</Trans>
-              </span>
-            )}
           </div>
         </div>
         <div className="setting-dialog-new-title">
@@ -105,36 +53,6 @@ class AboutSetting extends React.Component<SettingInfoProps, SettingInfoState> {
             ))}
           </select>
         </div>
-        {isElectron && (
-          <div className="setting-dialog-new-title">
-            <Trans>Get debug logs</Trans>
-            <span
-              className="change-location-button"
-              onClick={async () => {
-                const { ipcRenderer } = window.require("electron");
-                ipcRenderer.invoke("get-debug-logs", "ping");
-              }}
-            >
-              <Trans>Locate</Trans>
-            </span>
-          </div>
-        )}
-
-        {isElectron && (
-          <div className="setting-dialog-new-title">
-            <Trans>Open console</Trans>
-            <span
-              className="change-location-button"
-              onClick={async () => {
-                window
-                  .require("electron")
-                  .ipcRenderer.invoke("open-console", "ping");
-              }}
-            >
-              <Trans>View</Trans>
-            </span>
-          </div>
-        )}
         <div className="setting-dialog-new-title">
           <Trans>Document</Trans>
 

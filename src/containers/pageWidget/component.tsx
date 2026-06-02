@@ -14,6 +14,7 @@ class Background extends React.Component<BackgroundProps, BackgroundState> {
   timeInterval: any;
   lastBatchTranslationTriggerAt: number;
   batchTranslationLock: Promise<any>;
+  batchTranslationResultCache: Map<string, string>;
   constructor(props: any) {
     super(props);
     this.state = {
@@ -26,6 +27,7 @@ class Background extends React.Component<BackgroundProps, BackgroundState> {
     this.isFirst = true;
     this.lastBatchTranslationTriggerAt = 0;
     this.batchTranslationLock = Promise.resolve();
+    this.batchTranslationResultCache = new Map();
   }
 
   getFormattedTime() {
@@ -66,30 +68,162 @@ class Background extends React.Component<BackgroundProps, BackgroundState> {
       this.setState({ isSingle: nextProps.readerMode !== "double" });
     }
   }
+  hashBatchTranslationText(text: string) {
+    let hash = 2166136261;
+    for (let i = 0; i < text.length; i++) {
+      hash ^= text.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(36) + "-" + text.length.toString(36);
+  }
+
+  normalizeBatchTranslationText(text: string) {
+    return (text || "")
+      .normalize("NFKC")
+      .replace(/\u00a0/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  getBatchTranslationTargetLang() {
+    return KookitConfig.ConvertLangMap[
+      ConfigService.getReaderConfig("lang") || "zhCN"
+    ];
+  }
+
+  getBatchTranslationMemoryKey(text: string, targetLang: string) {
+    const modelKey = ConfigService.getReaderConfig("aiTranslateModel") || "";
+    const modelConfig =
+      ConfigService.getObjectConfig(modelKey, "aiModelConfig", null)?.config ||
+      {};
+    const prompt =
+      ConfigService.getReaderConfig("aiTranslatePrompt") ||
+      KookitConfig.DefaultPrompts.aiTranslate ||
+      "";
+    const scope = [
+      this.props.currentBook.key,
+      targetLang,
+      modelKey,
+      modelConfig.endpoint || "",
+      modelConfig.providerId || "",
+      modelConfig.modelId || "",
+      this.hashBatchTranslationText(prompt),
+    ].join(":");
+    return [
+      scope,
+      this.hashBatchTranslationText(this.normalizeBatchTranslationText(text)),
+    ].join(":");
+  }
+
+  getCachedBatchTranslation(text: string, targetLang: string) {
+    const normalizedText = this.normalizeBatchTranslationText(text);
+    if (!normalizedText) return "";
+    return (
+      this.batchTranslationResultCache.get(
+        this.getBatchTranslationMemoryKey(text, targetLang)
+      ) || ""
+    );
+  }
+
+  setCachedBatchTranslation(
+    text: string,
+    translatedText: string,
+    targetLang: string
+  ) {
+    const normalizedText = this.normalizeBatchTranslationText(text);
+    if (!normalizedText || !translatedText) return;
+    this.batchTranslationResultCache.set(
+      this.getBatchTranslationMemoryKey(text, targetLang),
+      translatedText
+    );
+  }
+
   async handleBatchTranslation(rendition) {
+    if (
+      !ConfigService.getAllListConfig("fullTranslationBooks").includes(
+        this.props.currentBook.key
+      ) ||
+      ConfigService.getReaderConfig("fullTranslationMode") === "no" ||
+      !this.props.isAuthed
+    ) {
+      return;
+    }
+
+    let batchTransTexts = await rendition.getBatchTransTexts();
+    if (!batchTransTexts || batchTransTexts.length === 0) {
+      return;
+    }
+
+    const targetLang = this.getBatchTranslationTargetLang();
+    const cachedTexts: string[] = [];
+    const cachedTranslations: string[] = [];
+    const missingTexts: string[] = [];
+
+    batchTransTexts.forEach((text: string) => {
+      const cachedTranslation = this.getCachedBatchTranslation(
+        text,
+        targetLang
+      );
+      if (cachedTranslation) {
+        cachedTexts.push(text);
+        cachedTranslations.push(cachedTranslation);
+      } else {
+        missingTexts.push(text);
+      }
+    });
+
+    if (cachedTexts.length > 0) {
+      rendition.handleBatchTransResult(cachedTexts, cachedTranslations);
+    }
+    if (missingTexts.length === 0) {
+      return;
+    }
+
     const prev = this.batchTranslationLock;
     const next = prev.then(async () => {
-      if (
-        !ConfigService.getAllListConfig("fullTranslationBooks").includes(
-          this.props.currentBook.key
-        ) ||
-        ConfigService.getReaderConfig("fullTranslationMode") === "no" ||
-        !this.props.isAuthed
-      ) {
+      const stillMissingTexts: string[] = [];
+      const newlyCachedTexts: string[] = [];
+      const newlyCachedTranslations: string[] = [];
+
+      missingTexts.forEach((text: string) => {
+        const cachedTranslation = this.getCachedBatchTranslation(
+          text,
+          targetLang
+        );
+        if (cachedTranslation) {
+          newlyCachedTexts.push(text);
+          newlyCachedTranslations.push(cachedTranslation);
+        } else {
+          stillMissingTexts.push(text);
+        }
+      });
+
+      if (newlyCachedTexts.length > 0) {
+        rendition.handleBatchTransResult(
+          newlyCachedTexts,
+          newlyCachedTranslations
+        );
+      }
+      if (stillMissingTexts.length === 0) {
         return;
       }
 
-      let batchTransTexts = await rendition.getBatchTransTexts();
-      if (batchTransTexts && batchTransTexts.length > 0) {
+      if (stillMissingTexts.length > 0) {
         let res = await getBatchTrans(
-          batchTransTexts,
+          stillMissingTexts,
           "Automatic",
-          KookitConfig.ConvertLangMap[
-            ConfigService.getReaderConfig("lang") || "zhCN"
-          ]
+          targetLang,
+          { bookKey: this.props.currentBook.key }
         );
         if (res && res.data && res.data.texts) {
-          rendition.handleBatchTransResult(batchTransTexts, res.data.texts);
+          res.data.texts.forEach((translatedText: string, index: number) => {
+            this.setCachedBatchTranslation(
+              stillMissingTexts[index],
+              translatedText,
+              targetLang
+            );
+          });
+          rendition.handleBatchTransResult(stillMissingTexts, res.data.texts);
         }
       }
     });

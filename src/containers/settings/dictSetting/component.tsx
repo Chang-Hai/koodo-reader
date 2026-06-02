@@ -29,40 +29,7 @@ class DictSetting extends React.Component<SettingInfoProps, SettingInfoState> {
   };
 
   handleImportClick = async () => {
-    const { ipcRenderer } = (window as any).require("electron");
-    const path = (window as any).require("path");
-
-    const filePath: string | undefined = await ipcRenderer.invoke(
-      "select-file",
-      { filters: [{ name: "MDict", extensions: ["mdx"] }] }
-    );
-    if (!filePath) return;
-
-    const fileName = path.basename(filePath);
-    const ext = fileName.split(".").pop()?.toLowerCase() || "";
-    const fileNameWithoutExt = fileName.replace(/\.[^/.]+$/, "");
-
-    const id = Date.now().toString();
-    const meta: Omit<DictMeta, "id"> = {
-      name: fileNameWithoutExt,
-      extension: ext,
-    };
-
-    try {
-      DictUtil.saveDictFromPath(id, filePath);
-      DictUtil.saveDictMeta(id, meta);
-      DictUtil.addDictId(id);
-
-      const newDict: DictMeta = { id, ...meta };
-      this.setState((prev) => ({
-        dicts: [...prev.dicts, newDict],
-      }));
-      this.props.handleFetchPlugins();
-      toast.success(this.props.t("Import successful"));
-    } catch (err) {
-      console.error(err);
-      toast.error(this.props.t("Import failed"));
-    }
+    toast.error(this.props.t("Local dictionary import is not supported on Web"));
   };
 
   handleDelete = async (dict: DictMeta) => {

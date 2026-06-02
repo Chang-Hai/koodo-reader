@@ -22,6 +22,7 @@ class Sidebar extends React.Component<SidebarProps, SidebarState> {
         ConfigService.getReaderConfig("isCollapsed") === "yes" || false,
       isCreateShelf: false,
       newShelfName: "",
+      isMobileSidebarOpen: false,
     };
   }
   componentDidMount() {
@@ -53,6 +54,7 @@ class Sidebar extends React.Component<SidebarProps, SidebarState> {
     this.props.handleShelf("");
     this.props.handleSearch(false);
     this.props.handleSortDisplay(false);
+    this.closeMobileSidebar();
   };
   handleHover = (mode: string) => {
     this.setState({ hoverMode: mode });
@@ -64,6 +66,16 @@ class Sidebar extends React.Component<SidebarProps, SidebarState> {
     this.setState({ isCollapsed });
     this.props.handleCollapse(isCollapsed);
     ConfigService.setReaderConfig("isCollapsed", isCollapsed ? "yes" : "no");
+  };
+  toggleMobileSidebar = () => {
+    this.setState({
+      isMobileSidebarOpen: !this.state.isMobileSidebarOpen,
+    });
+  };
+  closeMobileSidebar = () => {
+    if (document.body.clientWidth <= 820) {
+      this.setState({ isMobileSidebarOpen: false });
+    }
   };
   handleJump = (url: string) => {
     openInBrowser(url);
@@ -180,6 +192,7 @@ class Sidebar extends React.Component<SidebarProps, SidebarState> {
                 this.props.handleMode("shelf");
                 this.setState({ mode: "" });
                 this.props.history.push("/manager/shelf");
+                this.closeMobileSidebar();
               }}
               onMouseEnter={() => {
                 this.handleShelfHover(item);
@@ -252,11 +265,37 @@ class Sidebar extends React.Component<SidebarProps, SidebarState> {
     };
     return (
       <>
-        <div className="sidebar">
+        {!this.props.isSettingOpen && (
+          <button
+            type="button"
+            className="mobile-sidebar-trigger"
+            onClick={this.toggleMobileSidebar}
+            aria-label={this.props.t("Menu")}
+          >
+            <span className="icon-menu sidebar-list"></span>
+          </button>
+        )}
+        {this.state.isMobileSidebarOpen && (
+          <div
+            className="mobile-sidebar-backdrop"
+            onClick={this.closeMobileSidebar}
+          ></div>
+        )}
+        <div
+          className={
+            this.state.isMobileSidebarOpen
+              ? "sidebar mobile-sidebar-open"
+              : "sidebar"
+          }
+        >
           <div
             className="sidebar-list-icon"
             onClick={() => {
-              this.handleCollapse(!this.state.isCollapsed);
+              if (document.body.clientWidth <= 820) {
+                this.toggleMobileSidebar();
+              } else {
+                this.handleCollapse(!this.state.isCollapsed);
+              }
             }}
           >
             <span className="icon-menu sidebar-list"></span>
@@ -443,6 +482,7 @@ class Sidebar extends React.Component<SidebarProps, SidebarState> {
               style={{ cursor: "pointer" }}
               onClick={() => {
                 this.props.history.push("/stats");
+                this.closeMobileSidebar();
               }}
             >
               <div

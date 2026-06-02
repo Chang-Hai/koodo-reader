@@ -4,11 +4,15 @@ import {
 } from "../../assets/lib/kookit-extra-browser.min";
 import { isTokenExpired } from "../common";
 import { getCloudConfig } from "../file/common";
+import { isSelfHostedOfflineFirst } from "../selfHostedWebUnlock";
 
 class SyncService {
   private static syncUtilCache: { [key: string]: SyncUtil } = {};
   private static pickerUtilCache: { [key: string]: SyncUtil } = {};
   static async getSyncUtil() {
+    if (isSelfHostedOfflineFirst()) {
+      return new SyncUtil("", {});
+    }
     let service = ConfigService.getItem("defaultSyncOption");
     if (!service) {
       return new SyncUtil("", {});
@@ -27,6 +31,9 @@ class SyncService {
     }
   }
   static async getPickerUtil(service: string) {
+    if (isSelfHostedOfflineFirst()) {
+      return new SyncUtil("", {});
+    }
     if (!this.pickerUtilCache[service] || (await isTokenExpired(service))) {
       let config = await getCloudConfig(service);
       config.baseFolder = "";

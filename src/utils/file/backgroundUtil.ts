@@ -1,13 +1,9 @@
-import { isElectron } from "react-device-detect";
-import { getStorageLocation } from "../common";
 import { ConfigService } from "../../assets/lib/kookit-extra-browser.min";
 import { LocalFileManager } from "./localFile";
 import localforage from "localforage";
 import { Buffer } from "buffer";
 // @ts-ignore – no bundled type declarations
 import ColorThief from "color-thief-browser";
-
-declare var window: any;
 
 const BG_FOLDER = "background";
 
@@ -33,80 +29,39 @@ class BackgroundUtil {
     const { extension, arrayBuffer } = this.convertDataUrl(dataUrl);
     const filename = `${id}.${extension}`;
 
-    if (isElectron) {
-      const fs = window.require("fs");
-      const path = window.require("path");
-      const dir = path.join(getStorageLocation() || "", BG_FOLDER);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-      fs.writeFileSync(path.join(dir, filename), Buffer.from(arrayBuffer));
+    if (ConfigService.getReaderConfig("isUseLocal") === "yes") {
+      await LocalFileManager.saveFile(filename, arrayBuffer, BG_FOLDER);
     } else {
-      if (ConfigService.getReaderConfig("isUseLocal") === "yes") {
-        await LocalFileManager.saveFile(filename, arrayBuffer, BG_FOLDER);
-      } else {
-        // store raw dataUrl in localforage keyed by `background_<id>`
-        await localforage.setItem(`background_${id}`, dataUrl);
-      }
+      await localforage.setItem(`background_${id}`, dataUrl);
     }
   }
 
   /** Load image data URL by id. Returns empty string if not found. */
   static async loadImage(id: string, extension?: string): Promise<string> {
-    if (isElectron) {
-      const fs = window.require("fs");
-      const path = window.require("path");
-      const dir = path.join(getStorageLocation() || "", BG_FOLDER);
-      if (!fs.existsSync(dir)) return "";
-      const files: string[] = fs.readdirSync(dir);
-      const file = files.find((f) => f.startsWith(id + "."));
-      if (!file) return "";
-      const filePath = path.join(dir, file);
-      const ext = file.split(".").pop() || "png";
-      const buf: Buffer = fs.readFileSync(filePath);
-      const base64 = buf.toString("base64");
+    if (ConfigService.getReaderConfig("isUseLocal") === "yes") {
+      const ext = extension || "png";
+      const filename = `${id}.${ext}`;
+      const buf = await LocalFileManager.readFile(filename, BG_FOLDER);
+      if (!buf) return "";
       const mime = ext === "jpg" ? "image/jpeg" : `image/${ext}`;
+      const base64 = Buffer.from(buf).toString("base64");
       return `data:${mime};base64,${base64}`;
     } else {
-      if (ConfigService.getReaderConfig("isUseLocal") === "yes") {
-        const ext = extension || "png";
-        const filename = `${id}.${ext}`;
-        const buf = await LocalFileManager.readFile(filename, BG_FOLDER);
-        if (!buf) return "";
-        const mime = ext === "jpg" ? "image/jpeg" : `image/${ext}`;
-        const base64 = Buffer.from(buf).toString("base64");
-        return `data:${mime};base64,${base64}`;
-      } else {
-        const dataUrl = await localforage.getItem<string>(`background_${id}`);
-        return dataUrl || "";
-      }
+      const dataUrl = await localforage.getItem<string>(`background_${id}`);
+      return dataUrl || "";
     }
   }
 
   /** Delete image file by id. */
   static async deleteImage(id: string): Promise<void> {
-    if (isElectron) {
-      const fs = window.require("fs");
-      const path = window.require("path");
-      const dir = path.join(getStorageLocation() || "", BG_FOLDER);
-      if (!fs.existsSync(dir)) return;
-      const files: string[] = fs.readdirSync(dir);
-      const file = files.find((f) => f.startsWith(id + "."));
-      if (file) {
-        const filePath = path.join(dir, file);
-        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    if (ConfigService.getReaderConfig("isUseLocal") === "yes") {
+      for (const ext of ["png", "jpg", "jpeg", "webp", "gif"]) {
+        await LocalFileManager.deleteFile(`${id}.${ext}`, BG_FOLDER).catch(
+          () => {}
+        );
       }
     } else {
-      if (ConfigService.getReaderConfig("isUseLocal") === "yes") {
-        // Try common extensions
-        for (const ext of ["png", "jpg", "jpeg", "webp", "gif"]) {
-          await LocalFileManager.deleteFile(`${id}.${ext}`, BG_FOLDER).catch(
-            () => {}
-          );
-        }
-      } else {
-        await localforage.removeItem(`background_${id}`);
-      }
+      await localforage.removeItem(`background_${id}`);
     }
   }
 

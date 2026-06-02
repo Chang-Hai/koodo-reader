@@ -1,7 +1,4 @@
-import { isElectron } from "react-device-detect";
 import { TokenService } from "../assets/lib/kookit-extra-browser.min";
-
-declare var window: any;
 
 export interface BiometricCapability {
   available: boolean;
@@ -33,36 +30,22 @@ export async function verifyPin(input: string): Promise<boolean> {
 }
 
 export async function getBiometricCapability(): Promise<BiometricCapability> {
-  if (!isElectron) {
-    return {
-      available: false,
-      provider: "Biometric",
-      platform: "web",
-      status: "Unsupported",
-    };
-  }
-
-  return await window
-    .require("electron")
-    .ipcRenderer.invoke("get-biometric-capability");
+  return {
+    available: false,
+    provider: "Biometric",
+    platform: "web",
+    status: "Unsupported",
+  };
 }
 
 export async function promptBiometricAuth(
   message: string
 ): Promise<BiometricAuthResult> {
-  if (!isElectron) {
-    return {
-      success: false,
-      code: "Unsupported",
-      provider: "Biometric",
-    };
-  }
-
-  return await window
-    .require("electron")
-    .ipcRenderer.invoke("prompt-biometric-auth", {
-      message,
-    });
+  return {
+    success: false,
+    code: "Unsupported",
+    provider: "Biometric",
+  };
 }
 
 export function getBiometricErrorMessage(

@@ -11,9 +11,7 @@ import ViewMode from "../../../components/viewMode";
 import SelectBook from "../../../components/selectBook";
 import { Trans } from "react-i18next";
 import Book from "../../../models/Book";
-import { isElectron } from "react-device-detect";
 import DatabaseService from "../../../utils/storage/databaseService";
-declare var window: any;
 let currentBookMode = "home";
 function getBookCountPerPage() {
   const container = document.querySelector(
@@ -74,18 +72,11 @@ class BookList extends React.Component<BookListProps, BookListState> {
 
     // 保存 visibilitychange 监听器引用
     this.visibilityChangeHandler = async (event) => {
-      if (document.visibilityState === "visible" && !isElectron) {
+      if (document.visibilityState === "visible") {
         await this.handleFinishReading();
       }
     };
     document.addEventListener("visibilitychange", this.visibilityChangeHandler);
-
-    if (isElectron) {
-      const { ipcRenderer } = window.require("electron");
-      ipcRenderer.on("reading-finished", async (event: any, config: any) => {
-        this.handleFinishReading();
-      });
-    }
 
     // 初始加载完整的书籍数据
     await this.loadFullBooksData();
@@ -108,12 +99,6 @@ class BookList extends React.Component<BookListProps, BookListState> {
         this.visibilityChangeHandler
       );
       this.visibilityChangeHandler = null;
-    }
-
-    // 清理 IPC 监听器
-    if (isElectron) {
-      const { ipcRenderer } = window.require("electron");
-      ipcRenderer.removeAllListeners("reading-finished");
     }
   }
 

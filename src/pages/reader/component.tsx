@@ -15,15 +15,11 @@ import "./index.css";
 import Book from "../../models/Book";
 import DatabaseService from "../../utils/storage/databaseService";
 import ConvertDialog from "../../components/dialogs/convertDialog";
-import { isElectron } from "react-device-detect";
 import SettingDialog from "../../components/dialogs/settingDialog";
 import SpeechDialog from "../../components/dialogs/speechDialog";
 import PopupOptionDialog from "../../components/dialogs/popupOptionDialog";
-import {
-  updateDiscordPresence,
-  clearDiscordPresence,
-} from "../../utils/reader/discordRPC";
 import SupportDialog from "../../components/dialogs/supportDialog";
+import { isMobileReaderViewport } from "../../utils/common";
 
 let lock = false; //prevent from clicking too fasts
 let throttleTime =
@@ -35,41 +31,22 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
   tickTimer!: NodeJS.Timeout;
   private readingTimeUtil = new ReadingTimeUtil(
     ConfigService,
-    isElectron
-      ? {
-          registerUnloadHandler(callback: () => void): () => void {
-            const { ipcRenderer } = (window as any).require("electron");
-            // Separate reader window close
-            ipcRenderer.on("before-reader-close", callback);
-            // In-app tab (WebContentsView) close
-            ipcRenderer.on("before-tab-close", callback);
-            return () => {
-              ipcRenderer.removeListener("before-reader-close", callback);
-              ipcRenderer.removeListener("before-tab-close", callback);
-            };
-          },
-          onBeforeClose(): void {
-            const { ipcRenderer } = (window as any).require("electron");
-            // Reply to whichever close signal is active
-            ipcRenderer.send("reader-close-ready");
-            ipcRenderer.send("tab-close-ready");
-          },
-        }
-      : {
-          registerUnloadHandler(callback: () => void): () => void {
-            window.addEventListener("beforeunload", callback);
-            return () => window.removeEventListener("beforeunload", callback);
-          },
-        }
+    {
+      registerUnloadHandler(callback: () => void): () => void {
+        window.addEventListener("beforeunload", callback);
+        return () => window.removeEventListener("beforeunload", callback);
+      },
+    }
   );
   constructor(props: ReaderProps) {
     super(props);
+    const isMobileReader = isMobileReaderViewport();
     this.state = {
       isOpenTopPanel: false,
       isOpenBottomPanel: false,
       hoverPanel: "",
-      isOpenLeftPanel: this.props.isNavLocked,
-      isOpenRightPanel: this.props.isSettingLocked,
+      isOpenLeftPanel: isMobileReader ? false : this.props.isNavLocked,
+      isOpenRightPanel: isMobileReader ? false : this.props.isSettingLocked,
       totalDuration: 0,
       currentDuration: 0,
       scale: ConfigService.getReaderConfig("scale") || "1",
@@ -97,10 +74,8 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
       }));
     }, 1000);
 
-    window.addEventListener("beforeunload", function (event) {
-      if (!isElectron) {
-        ConfigService.setReaderConfig("isFinishWebReading", "yes");
-      }
+    window.addEventListener("beforeunload", function () {
+      ConfigService.setReaderConfig("isFinishWebReading", "yes");
     });
     window.addEventListener("mousemove", () => {
       isMouseMoving = true;
@@ -136,6 +111,9 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
         book.format.startsWith("CB")
           ? ConfigService.getReaderConfig("pdfReaderMode") || "scroll"
           : ConfigService.getReaderConfig("readerMode") || "double";
+      if (isMobileReaderViewport() && readerMode === "double") {
+        readerMode = "single";
+      }
       this.props.handleReaderMode(readerMode);
       this.props.handleReadingBook(book);
       // Start event-driven reading-time tracking
@@ -143,22 +121,48 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
       // Initialise UI duration from persisted total
       const savedTotal = this.readingTimeUtil.getTotalSeconds(book.key);
       this.setState({ totalDuration: savedTotal, currentDuration: 0 });
-      if (isElectron) {
-        updateDiscordPresence(book);
-      }
     });
   }
 
   componentWillUnmount() {
-    if (isElectron) {
-      clearDiscordPresence();
-    }
     clearInterval(this.tickTimer);
     // Flush any in-flight session time before the component tears down
     this.readingTimeUtil.stop();
   }
 
   handleEnterReader = (position: string) => {
+    if (isMobileReaderViewport()) {
+      switch (position) {
+        case "right":
+          this.setState({
+            isOpenRightPanel: true,
+            isOpenLeftPanel: false,
+            isOpenTopPanel: false,
+            isOpenBottomPanel: false,
+          });
+          return;
+        case "left":
+          this.setState({
+            isOpenLeftPanel: true,
+            isOpenRightPanel: false,
+            isOpenTopPanel: false,
+            isOpenBottomPanel: false,
+          });
+          return;
+        case "top":
+        case "bottom":
+          this.setState({
+            isOpenTopPanel: true,
+            isOpenBottomPanel: true,
+            isOpenLeftPanel: false,
+            isOpenRightPanel: false,
+          });
+          return;
+        default:
+          break;
+      }
+    }
+
     switch (position) {
       case "right":
         this.setState({
@@ -187,7 +191,7 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
   handleLeaveReader = (position: string) => {
     switch (position) {
       case "right":
-        if (this.props.isSettingLocked) {
+        if (!isMobileReaderViewport() && this.props.isSettingLocked) {
           break;
         } else {
           this.setState({ isOpenRightPanel: false });
@@ -196,7 +200,7 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
 
       case "left":
         if (
-          this.props.isNavLocked ||
+          (!isMobileReaderViewport() && this.props.isNavLocked) ||
           ConfigService.getReaderConfig("isTempLocked") === "yes"
         ) {
           break;
@@ -223,7 +227,27 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
       "recordLocation"
     );
   };
+  handleCloseMobileReaderPanels = () => {
+    if (!isMobileReaderViewport()) return;
+    this.setState({
+      isOpenLeftPanel: false,
+      isOpenRightPanel: false,
+      isOpenTopPanel: false,
+      isOpenBottomPanel: false,
+    });
+  };
   render() {
+    const isMobileReader = isMobileReaderViewport();
+    const isNavLocked = isMobileReader ? false : this.props.isNavLocked;
+    const isSettingLocked = isMobileReader
+      ? false
+      : this.props.isSettingLocked;
+    const hiddenLeftPanelTransform = isMobileReader
+      ? "translateX(-100vw)"
+      : "translateX(-309px)";
+    const hiddenRightPanelTransform = isMobileReader
+      ? "translateX(100vw)"
+      : "translateX(309px)";
     const renditionProps = {
       handleLeaveReader: this.handleLeaveReader,
       handleEnterReader: this.handleEnterReader,
@@ -248,7 +272,7 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
               setTimeout(() => (lock = false), throttleTime);
             }}
             style={{
-              left: this.props.isNavLocked ? 315 : 15,
+              left: isNavLocked ? 315 : 15,
             }}
           >
             <span className="icon-dropdown previous-chapter-single"></span>
@@ -258,7 +282,7 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
           style={{
             position: "absolute",
             bottom: 10,
-            right: this.props.isSettingLocked ? 315 : 15,
+            right: isSettingLocked ? 315 : 15,
             display: "flex",
             flexDirection: "column-reverse",
             alignItems: "center",
@@ -322,7 +346,7 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
           style={{
             position: "absolute",
             top: "0px",
-            right: this.props.isSettingLocked ? 300 : 5,
+            right: isSettingLocked ? 300 : 5,
             zIndex: 11,
             width: "120px",
             display: "flex",
@@ -447,6 +471,17 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
             <div
               className="reader-setting-icon-container"
               onClick={() => {
+                if (isMobileReader) {
+                  const isOpen =
+                    this.state.isOpenTopPanel || this.state.isOpenBottomPanel;
+                  this.setState({
+                    isOpenTopPanel: !isOpen,
+                    isOpenBottomPanel: !isOpen,
+                    isOpenLeftPanel: false,
+                    isOpenRightPanel: false,
+                  });
+                  return;
+                }
                 this.handleEnterReader("left");
                 this.handleEnterReader("right");
                 this.handleEnterReader("bottom");
@@ -457,6 +492,39 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
             </div>
           )}
         </div>
+        {isMobileReader &&
+          !this.state.isOpenLeftPanel &&
+          !this.state.isOpenRightPanel && (
+            <>
+              <button
+                type="button"
+                className="mobile-reader-panel-trigger mobile-reader-panel-trigger-left"
+                onClick={() => {
+                  this.handleEnterReader("left");
+                }}
+                aria-label="Open navigation"
+              >
+                <span className="icon-list"></span>
+              </button>
+              <button
+                type="button"
+                className="mobile-reader-panel-trigger mobile-reader-panel-trigger-right"
+                onClick={() => {
+                  this.handleEnterReader("right");
+                }}
+                aria-label={this.props.t("Reading option")}
+              >
+                <span className="icon-setting"></span>
+              </button>
+            </>
+          )}
+        {isMobileReader &&
+          (this.state.isOpenLeftPanel || this.state.isOpenRightPanel) && (
+            <div
+              className="mobile-reader-panel-backdrop"
+              onClick={this.handleCloseMobileReaderPanels}
+            ></div>
+          )}
         {this.props.isSettingOpen && (
           <>
             <SettingDialog />
@@ -474,69 +542,73 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
           }}
         />
 
-        <div
-          className="left-panel"
-          onMouseEnter={() => {
-            if (
-              this.state.isTouch ||
-              this.state.isOpenLeftPanel ||
-              this.state.isPreventTrigger
-            ) {
-              this.setState({ hoverPanel: "left" });
-              return;
-            }
-            isHovering = true;
-            setTimeout(
-              () => {
-                if (!isHovering || isMouseMoving) return;
+        {!isMobileReader && (
+          <>
+            <div
+              className="left-panel"
+              onMouseEnter={() => {
+                if (
+                  this.state.isTouch ||
+                  this.state.isOpenLeftPanel ||
+                  this.state.isPreventTrigger
+                ) {
+                  this.setState({ hoverPanel: "left" });
+                  return;
+                }
+                isHovering = true;
+                setTimeout(
+                  () => {
+                    if (!isHovering || isMouseMoving) return;
+                    this.handleEnterReader("left");
+                  },
+                  this.state.isPreventTrigger ? 0 : 500
+                );
+              }}
+              onMouseLeave={() => {
+                isHovering = false;
+                this.setState({ hoverPanel: "" });
+              }}
+              style={this.state.hoverPanel === "left" ? { opacity: 0.5 } : {}}
+              onClick={() => {
                 this.handleEnterReader("left");
-              },
-              this.state.isPreventTrigger ? 0 : 500
-            );
-          }}
-          onMouseLeave={() => {
-            isHovering = false;
-            this.setState({ hoverPanel: "" });
-          }}
-          style={this.state.hoverPanel === "left" ? { opacity: 0.5 } : {}}
-          onClick={() => {
-            this.handleEnterReader("left");
-          }}
-        >
-          <span className="icon-grid panel-icon"></span>
-        </div>
-        <div
-          className="right-panel"
-          onMouseEnter={() => {
-            if (
-              this.state.isTouch ||
-              this.state.isOpenRightPanel ||
-              this.state.isPreventTrigger
-            ) {
-              this.setState({ hoverPanel: "right" });
-              return;
-            }
-            isHovering = true;
-            setTimeout(
-              () => {
-                if (!isHovering || isMouseMoving) return;
+              }}
+            >
+              <span className="icon-grid panel-icon"></span>
+            </div>
+            <div
+              className="right-panel"
+              onMouseEnter={() => {
+                if (
+                  this.state.isTouch ||
+                  this.state.isOpenRightPanel ||
+                  this.state.isPreventTrigger
+                ) {
+                  this.setState({ hoverPanel: "right" });
+                  return;
+                }
+                isHovering = true;
+                setTimeout(
+                  () => {
+                    if (!isHovering || isMouseMoving) return;
 
+                    this.handleEnterReader("right");
+                  },
+                  this.state.isPreventTrigger ? 0 : 500
+                );
+              }}
+              onMouseLeave={() => {
+                isHovering = false;
+                this.setState({ hoverPanel: "" });
+              }}
+              style={this.state.hoverPanel === "right" ? { opacity: 0.5 } : {}}
+              onClick={() => {
                 this.handleEnterReader("right");
-              },
-              this.state.isPreventTrigger ? 0 : 500
-            );
-          }}
-          onMouseLeave={() => {
-            isHovering = false;
-            this.setState({ hoverPanel: "" });
-          }}
-          style={this.state.hoverPanel === "right" ? { opacity: 0.5 } : {}}
-          onClick={() => {
-            this.handleEnterReader("right");
-          }}
-        >
-          <span className="icon-grid panel-icon"></span>
-        </div>
+              }}
+            >
+              <span className="icon-grid panel-icon"></span>
+            </div>
+          </>
+        )}
         <div
           className="top-panel"
           onMouseEnter={() => {
@@ -562,16 +634,10 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
             this.state.hoverPanel === "top"
               ? {
                   opacity: 0.5,
-                  marginLeft:
-                    this.props.isNavLocked && !this.props.isSettingLocked
-                      ? 150
-                      : 0,
+                  marginLeft: isNavLocked && !isSettingLocked ? 150 : 0,
                 }
               : {
-                  marginLeft:
-                    this.props.isNavLocked && !this.props.isSettingLocked
-                      ? 150
-                      : 0,
+                  marginLeft: isNavLocked && !isSettingLocked ? 150 : 0,
                 }
           }
           onMouseLeave={() => {
@@ -616,16 +682,10 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
             this.state.hoverPanel === "bottom"
               ? {
                   opacity: 0.5,
-                  marginLeft:
-                    this.props.isNavLocked && !this.props.isSettingLocked
-                      ? 150
-                      : 0,
+                  marginLeft: isNavLocked && !isSettingLocked ? 150 : 0,
                 }
               : {
-                  marginLeft:
-                    this.props.isNavLocked && !this.props.isSettingLocked
-                      ? 150
-                      : 0,
+                  marginLeft: isNavLocked && !isSettingLocked ? 150 : 0,
                 }
           }
         >
@@ -641,10 +701,18 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
             this.state.isOpenRightPanel
               ? {}
               : {
-                  transform: "translateX(309px)",
+                  transform: hiddenRightPanelTransform,
                 }
           }
         >
+          <button
+            type="button"
+            className="mobile-reader-panel-close mobile-reader-panel-close-right"
+            onClick={this.handleCloseMobileReaderPanels}
+            aria-label={this.props.t("Close")}
+          >
+            <span className="icon-close"></span>
+          </button>
           <SettingPanel />
         </div>
         <div
@@ -656,10 +724,18 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
             this.state.isOpenLeftPanel
               ? {}
               : {
-                  transform: "translateX(-309px)",
+                  transform: hiddenLeftPanelTransform,
                 }
           }
         >
+          <button
+            type="button"
+            className="mobile-reader-panel-close mobile-reader-panel-close-left"
+            onClick={this.handleCloseMobileReaderPanels}
+            aria-label={this.props.t("Close")}
+          >
+            <span className="icon-close"></span>
+          </button>
           <NavigationPanel
             {...({
               totalDuration: this.state.totalDuration,
@@ -675,18 +751,18 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
             this.state.isOpenBottomPanel
               ? {
                   marginLeft:
-                    this.props.isNavLocked && !this.props.isSettingLocked
+                    isNavLocked && !isSettingLocked
                       ? 150
-                      : !this.props.isNavLocked && this.props.isSettingLocked
+                      : !isNavLocked && isSettingLocked
                         ? -150
                         : 0,
                 }
               : {
                   transform: "translateY(110px)",
                   marginLeft:
-                    this.props.isNavLocked && !this.props.isSettingLocked
+                    isNavLocked && !isSettingLocked
                       ? 150
-                      : !this.props.isNavLocked && this.props.isSettingLocked
+                      : !isNavLocked && isSettingLocked
                         ? -150
                         : 0,
                 }
@@ -703,18 +779,18 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
             this.state.isOpenTopPanel
               ? {
                   marginLeft:
-                    this.props.isNavLocked && !this.props.isSettingLocked
+                    isNavLocked && !isSettingLocked
                       ? 150
-                      : !this.props.isNavLocked && this.props.isSettingLocked
+                      : !isNavLocked && isSettingLocked
                         ? -150
                         : 0,
                 }
               : {
                   transform: "translateY(-110px)",
                   marginLeft:
-                    this.props.isNavLocked && !this.props.isSettingLocked
+                    isNavLocked && !isSettingLocked
                       ? 150
-                      : !this.props.isNavLocked && this.props.isSettingLocked
+                      : !isNavLocked && isSettingLocked
                         ? -150
                         : 0,
                 }

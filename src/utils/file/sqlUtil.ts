@@ -1,4 +1,3 @@
-import { isElectron } from "react-device-detect";
 import { SqlStatement } from "../../assets/lib/kookit-extra-browser.min";
 declare var window: any;
 function addColonToKeys(obj: any): any {
@@ -14,16 +13,7 @@ class SqlUtil {
     if (!this.SQL) {
       let config = {
         locateFile: (filename) => {
-          if (isElectron) {
-            const path = window.require("path");
-            const { ipcRenderer } = window.require("electron");
-            return `${path.join(
-              ipcRenderer.sendSync("get-dirname", "ping"),
-              "/build/lib/sqljs-wasm/" + filename
-            )}`;
-          } else {
-            return `./lib/sqljs-wasm/${filename}`;
-          }
+          return `./lib/sqljs-wasm/${filename}`;
         },
       };
       this.SQL = await window.initSqlJs(config);

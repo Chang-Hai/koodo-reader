@@ -9,7 +9,6 @@ import Lottie from "lottie-react";
 import animationSuccess from "../../../assets/lotties/success.json";
 import _ from "underscore";
 import toast from "react-hot-toast";
-import { isElectron } from "react-device-detect";
 import { TokenService } from "../../../assets/lib/kookit-extra-browser.min";
 import { generateSyncRecord } from "../../../utils/common";
 class BackupDialog extends React.Component<
@@ -177,17 +176,12 @@ class BackupDialog extends React.Component<
               <span
                 className="icon-restore"
                 onClick={(event) => {
-                  if (!isElectron) {
-                    event.preventDefault();
-                    toast(
-                      this.props.t(
-                        "Koodo Reader's web version are limited by the browser, for more powerful features, please download the desktop version."
-                      )
-                    );
-                    return;
-                  }
-                  this.setState({ isBackup: "no" });
-                  this.handleRestore();
+                  event.preventDefault();
+                  toast(
+                    this.props.t(
+                      "Koodo Reader's web version are limited by the browser, for more powerful features, please download the desktop version."
+                    )
+                  );
                 }}
               ></span>
               <div style={{ lineHeight: 1.0, fontSize: 15 }}>

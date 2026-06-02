@@ -9,6 +9,10 @@ import {
 import i18n from "../../i18n";
 import { handleExitApp } from "./common";
 import { getServerRegion } from "../common";
+import {
+  isSelfHostedWebProUnlocked,
+  shouldTreatSelfHostedWebAsAuthed,
+} from "../selfHostedWebUnlock";
 let thirdpartyRequest: ThirdpartyRequest | undefined;
 export const getThirdpartyRequest = async () => {
   if (thirdpartyRequest) {
@@ -88,7 +92,7 @@ export const onSyncCallback = async (service: string, authCode: string) => {
 export const encryptToken = async (service: string, config: any) => {
   let syncToken = JSON.stringify(config);
   let isAuthed = await TokenService.getToken("is_authed");
-  if (!isAuthed) {
+  if (isSelfHostedWebProUnlocked() || !isAuthed || isAuthed !== "yes") {
     await TokenService.setToken(service + "_token", syncToken);
     return { code: 200, msg: "success", data: syncToken };
   }
@@ -117,7 +121,7 @@ export const encryptToken = async (service: string, config: any) => {
 };
 export const decryptToken = async (service: string) => {
   let isAuthed = await TokenService.getToken("is_authed");
-  if (!isAuthed) {
+  if (isSelfHostedWebProUnlocked() || !isAuthed || isAuthed !== "yes") {
     let syncToken = (await TokenService.getToken(service + "_token")) || "{}";
     return {
       code: 200,

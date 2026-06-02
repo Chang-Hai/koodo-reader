@@ -1,5 +1,4 @@
 ﻿import Plugin from "../models/Plugin";
-import { isElectron } from "react-device-detect";
 import SparkMD5 from "spark-md5";
 import {
   CommonTool,
@@ -295,25 +294,8 @@ export const getFormatFromAudioPath = (audioPath: string) => {
   return format;
 };
 export const fetchFileFromPath = (filePath: string) => {
-  return new Promise<File>((resolve) => {
-    const fs = window.require("fs");
-
-    fs.readFile(filePath, (err, data) => {
-      if (err) {
-        console.error(err);
-        return;
-      }
-      const file = new File(
-        [data],
-        window.navigator.platform.indexOf("Win") > -1
-          ? filePath.split("\\").reverse()[0]
-          : filePath.split("/").reverse()[0],
-        {
-          lastModified: new Date().getTime(),
-        }
-      );
-      resolve(file);
-    });
+  return new Promise<File>((_resolve, reject) => {
+    reject(new Error("Reading local filesystem paths is not supported on Web"));
   });
 };
 
@@ -329,7 +311,7 @@ export const scrollContents = (chapterTitle: string, chapterHref: string) => {
     item.setAttribute("style", "");
     let dataHref = (item as any).getAttribute("data-href");
     if (chapterHref) {
-      return item.textContent === chapterTitle && dataHref === chapterHref;
+      return dataHref === chapterHref;
     } else {
       return item.textContent === chapterTitle;
     }
@@ -344,25 +326,13 @@ export const scrollContents = (chapterTitle: string, chapterHref: string) => {
   }
 };
 export const handleFullScreen = () => {
-  if (isElectron) {
-    if (ConfigService.getReaderConfig("isOpenInMain") === "yes") {
-      window
-        .require("electron")
-        .ipcRenderer.invoke("enter-tab-fullscreen", "ping");
-    } else {
-      window.require("electron").ipcRenderer.invoke("enter-fullscreen", "ping");
-    }
+  if (document.documentElement.requestFullscreen) {
+    document.documentElement.requestFullscreen().catch(() => {});
   }
 };
 export const handleExitFullScreen = () => {
-  if (isElectron) {
-    if (ConfigService.getReaderConfig("isOpenInMain") === "yes") {
-      window
-        .require("electron")
-        .ipcRenderer.invoke("exit-tab-fullscreen", "ping");
-    } else {
-      window.require("electron").ipcRenderer.invoke("exit-fullscreen", "ping");
-    }
+  if (document.fullscreenElement && document.exitFullscreen) {
+    document.exitFullscreen().catch(() => {});
   }
 };
 export const getQueryParams = (url: string) => {
@@ -375,15 +345,7 @@ export const getQueryParams = (url: string) => {
   return queryParams;
 };
 export const getStorageLocation = () => {
-  if (isElectron) {
-    return ConfigService.getItem("storageLocation")
-      ? ConfigService.getItem("storageLocation")
-      : window
-          .require("electron")
-          .ipcRenderer.sendSync("storage-location", "ping");
-  } else {
-    return ConfigService.getItem("storageLocation");
-  }
+  return ConfigService.getItem("storageLocation");
 };
 export const getAllVoices = (pluginList: Plugin[]) => {
   let voiceList: any[] = [];
@@ -407,28 +369,23 @@ export const checkPlugin = async (plugin: Plugin) => {
   }
 };
 export const reloadManager = () => {
-  if (isElectron) {
-    window.require("electron").ipcRenderer.invoke("reload-main", "ping");
-  } else {
-    window.location.reload();
-  }
+  window.location.reload();
 };
 export const openExternalUrl = (
   url: string,
   isPlugin: boolean = false,
   type: string = "link"
 ) => {
-  isElectron
-    ? ConfigService.getReaderConfig("isUseBuiltIn") === "yes" || isPlugin
-      ? window.require("electron").ipcRenderer.invoke("open-url", { url, type })
-      : window.require("electron").shell.openExternal(url)
-    : window.open(url);
+  window.open(url);
 };
 export const openInBrowser = (url: string) => {
-  isElectron
-    ? window.require("electron").shell.openExternal(url)
-    : window.open(url);
+  window.open(url);
 };
+export const isMobileReaderViewport = () => {
+  if (typeof document === "undefined") return false;
+  return document.body.clientWidth <= 820;
+};
+
 export const getPageWidth = (
   readerMode: string,
   scale: string,
@@ -466,6 +423,17 @@ export const getPageWidth = (
 
   let pageOffset = "";
   let pageWidth = 0;
+  if (isMobileReaderViewport()) {
+    let width = findValidMultiple(Math.max(240, document.body.clientWidth - 32));
+    pageOffset = `calc(50vw - ${width / 2}px)`;
+    pageWidth = width;
+
+    return {
+      pageOffset,
+      pageWidth: pageWidth + "px",
+    };
+  }
+
   if (readerMode === "scroll" || readerMode === "single") {
     let preWidth =
       document.body.clientWidth * Math.abs(parseFloat(scale)) -
@@ -526,41 +494,21 @@ export const getChatLocale = () => {
   }
 };
 export function addChatBox() {
-  const scriptContent = `
-    (function (d, t) {
-      var BASE_URL = "https://app.chatwoot.com";
-      var g = d.createElement(t),
-        s = d.getElementsByTagName(t)[0];
-      g.src = BASE_URL + "/packs/js/sdk.js";
-      g.defer = true;
-      g.async = true;
-      s.parentNode.insertBefore(g, s);
-      g.onload = function () {
-        window.chatwootSDK.run({
-          websiteToken: "svaD5wxfU5UY1r5ZzpMtLqv2",
-          baseUrl: BASE_URL,
-        });
-        window.addEventListener('chatwoot:ready', function() {
-          window.$chatwoot.setLocale('${getChatLocale()}');
-          window.$chatwoot.setCustomAttributes({
-            version: '${packageJson.version}',
-            client: 'web',
-          });
-        });
-      };
-    })(document, "script");
-  `;
-
-  const scriptElement = document.createElement("script");
-  scriptElement.type = "text/javascript";
-  scriptElement.text = scriptContent;
-  document.head.appendChild(scriptElement);
+  removeChatBox();
 }
 export function removeChatBox() {
-  const scriptElement = document.querySelector("script[src*='chatwoot']");
-  if (scriptElement) {
-    scriptElement.remove();
-  }
+  document
+    .querySelectorAll(
+      [
+        "script[src*='chatwoot']",
+        "#chatwoot_live_chat_widget",
+        ".woot-widget-holder",
+        ".woot-widget-bubble",
+      ].join(",")
+    )
+    .forEach((element) => element.remove());
+  delete (window as any).$chatwoot;
+  delete (window as any).chatwootSDK;
 }
 export const preCacheAllBooks = async (bookList: Book[]) => {
   for (let index = 0; index < bookList.length; index++) {
@@ -693,19 +641,17 @@ export const generateSyncRecord = async () => {
   }
 };
 export const handleContextMenu = (id: string, isInput: boolean = false) => {
-  if (!isElectron) return;
-  const clipboard = window.require("electron").clipboard;
-  const text = clipboard.readText();
-  // fill the text into the box
-  if (!isInput) {
-    let textarea = document.getElementById(id) as HTMLTextAreaElement;
-    textarea.value = text;
-    textarea.textContent = text;
-    triggerReactChange(id, text);
-  } else {
-    document.getElementById(id)?.setAttribute("value", text);
-    triggerReactChange(id, text);
-  }
+  navigator.clipboard?.readText().then((text) => {
+    if (!isInput) {
+      let textarea = document.getElementById(id) as HTMLTextAreaElement;
+      textarea.value = text;
+      textarea.textContent = text;
+      triggerReactChange(id, text);
+    } else {
+      document.getElementById(id)?.setAttribute("value", text);
+      triggerReactChange(id, text);
+    }
+  });
 };
 function triggerReactChange(id: string, value: string) {
   const element: any = document.getElementById(id);
@@ -776,48 +722,11 @@ export const formatTimestamp = (timestamp) => {
   return date.toLocaleDateString();
 };
 export const checkMissingBook = async () => {
-  if (!isElectron) return;
-  var fs = window.require("fs");
-  var path = window.require("path");
-  let bookList = (await BookUtil.getBookList()) as Book[];
-  for (let index = 0; index < bookList.length; index++) {
-    const book = bookList[index];
-    let fileName = book.key + "." + book.format.toLowerCase();
-    let expectedPath = path.join(getStorageLocation() || "", `book`, fileName);
-    if (fs.existsSync(expectedPath)) {
-      continue;
-    }
-    // create folder if not exists
-    if (!fs.existsSync(path.join(getStorageLocation() || "", "book"))) {
-      fs.mkdirSync(path.join(getStorageLocation() || "", "book"), {
-        recursive: true,
-      });
-    }
-    if (book.path && fs.existsSync(book.path)) {
-      fs.copyFileSync(book.path, expectedPath);
-    }
-  }
+  return;
 };
 export const deleteBrokenCovers = () => {
   try {
-    if (!isElectron) return;
-    var fs = window.require("fs");
-    var path = window.require("path");
-    const storageLocation = getStorageLocation();
-    if (!storageLocation) return;
-    const dirPath = path.join(storageLocation, "cover");
-    const files = fs.readdirSync(dirPath);
-    for (const file of files) {
-      const filePath = path.join(dirPath, file);
-      try {
-        const stat = fs.statSync(filePath);
-        if (stat.size === 0) {
-          fs.unlinkSync(filePath);
-        }
-      } catch (e) {
-        console.error("Failed to check/delete file:", filePath, e);
-      }
-    }
+    return;
   } catch (error) {
     console.error("Error while deleting broken books and covers:", error);
   }
@@ -839,69 +748,26 @@ export const testConnection = async (driveName: string, driveConfig: any) => {
   toast.loading(i18n.t("Testing connection..."), {
     id: "testing-connection-id",
   });
-  if (isElectron) {
-    const { ipcRenderer } = window.require("electron");
-    const fs = window.require("fs");
-    if (!fs.existsSync(getStorageLocation() + "/config")) {
-      fs.mkdirSync(getStorageLocation() + "/config", { recursive: true });
-    }
-    fs.writeFileSync(getStorageLocation() + "/config/test.txt", "Hello world!");
-    let result = await ipcRenderer.invoke("cloud-upload", {
-      ...driveConfig,
-      fileName: "test.txt",
-      service: driveName,
-      type: "config",
-      storagePath: getStorageLocation(),
-      isUseCache: false,
+  let syncUtil = new SyncUtil(driveName, driveConfig);
+  let result = await syncUtil.uploadFile(
+    "test.txt",
+    "config",
+    new Blob(["Hello world!"])
+  );
+  if (!result) {
+    toast.error(i18n.t("Connection failed"), {
+      id: "testing-connection-id",
     });
-    if (fs.existsSync(getStorageLocation() + "/config/test.txt")) {
-      fs.unlinkSync(getStorageLocation() + "/config/test.txt");
-    }
-    if (result) {
-      toast.success(i18n.t("Connection successful"), {
-        id: "testing-connection-id",
-      });
-      await ipcRenderer.invoke("cloud-delete", {
-        ...driveConfig,
-        fileName: "test.txt",
-        service: driveName,
-        type: "config",
-        storagePath: getStorageLocation(),
-        isUseCache: false,
-      });
-    } else {
-      toast.error(i18n.t("Connection failed"), {
-        id: "testing-connection-id",
-      });
-    }
-
-    return result;
+    return false;
   } else {
-    let syncUtil = new SyncUtil(driveName, driveConfig);
-    // 上传到云端
-    let result = await syncUtil.uploadFile(
-      "test.txt",
-      "config",
-      new Blob(["Hello world!"])
-    );
-    if (!result) {
-      toast.error(i18n.t("Connection failed"), {
-        id: "testing-connection-id",
-      });
-      return false;
-    } else {
-      toast.success(i18n.t("Connection successful"), {
-        id: "testing-connection-id",
-      });
-    }
-
-    // 删除云端文件
-    return await syncUtil.deleteFile("test.txt", "config");
+    toast.success(i18n.t("Connection successful"), {
+      id: "testing-connection-id",
+    });
   }
+
+  return await syncUtil.deleteFile("test.txt", "config");
 };
 export const testCORS = async (url: string) => {
-  if (isElectron) return true;
-
   try {
     const response = await fetch(url, {
       method: "GET", // 或 'POST' 等
@@ -963,60 +829,24 @@ export const showDownloadProgress = (
   let isFirst = true;
   let timer = setInterval(async () => {
     let downloadedSize = 0;
-    if (isElectron) {
-      if (type === "cloud") {
-        let tokenConfig = await getCloudConfig(service);
-        let config = {
-          ...tokenConfig,
-          service: service,
-          storagePath: getStorageLocation(),
-        };
-        downloadedSize = await window
-          .require("electron")
-          .ipcRenderer.invoke("cloud-progress", config);
-      } else {
-        let tokenConfig = await getCloudConfig(service);
-        downloadedSize = await window
-          .require("electron")
-          .ipcRenderer.invoke("picker-progress", {
-            ...tokenConfig,
-            baseFolder: "",
-            service: service,
-            currentPath: "",
-            storagePath: getStorageLocation(),
-          });
-      }
-      if (isFirst && downloadedSize > 0) {
-        downloadedSize = 0;
-        isFirst = false;
-      }
-      let progress = downloadedSize / bookSize;
-      toast.loading(
-        i18n.t("Downloading") + " (" + parseInt(progress * 100 + "") + "%)",
-        {
-          id: "offline-book",
-        }
-      );
+    if (type === "cloud") {
+      let syncUtil = await SyncService.getSyncUtil();
+      downloadedSize = await syncUtil.getDownloadedSize();
     } else {
-      if (type === "cloud") {
-        let syncUtil = await SyncService.getSyncUtil();
-        downloadedSize = await syncUtil.getDownloadedSize();
-      } else {
-        let pickerUtil = await SyncService.getPickerUtil(service);
-        downloadedSize = await pickerUtil.getDownloadedSize();
-      }
-      if (isFirst && downloadedSize > 0) {
-        downloadedSize = 0;
-        isFirst = false;
-      }
-      let progress = downloadedSize / bookSize;
-      toast.loading(
-        i18n.t("Downloading") + " (" + parseInt(progress * 100 + "") + "%)",
-        {
-          id: "offline-book",
-        }
-      );
+      let pickerUtil = await SyncService.getPickerUtil(service);
+      downloadedSize = await pickerUtil.getDownloadedSize();
     }
+    if (isFirst && downloadedSize > 0) {
+      downloadedSize = 0;
+      isFirst = false;
+    }
+    let progress = downloadedSize / bookSize;
+    toast.loading(
+      i18n.t("Downloading") + " (" + parseInt(progress * 100 + "") + "%)",
+      {
+        id: "offline-book",
+      }
+    );
   }, 500);
   return timer;
 };
@@ -1030,70 +860,32 @@ export const showTaskProgress = async (
     toast(i18n.t("Please add data source in the setting"));
     return null;
   }
-  if (isElectron) {
-    let tokenConfig = await getCloudConfig(service);
-    config = {
-      ...tokenConfig,
-      service: service,
-      storagePath: getStorageLocation(),
-    };
-    await window.require("electron").ipcRenderer.invoke("cloud-reset", config);
-  } else {
-    let syncUtil = await SyncService.getSyncUtil();
-    syncUtil.resetCounters();
-  }
+  let syncUtil = await SyncService.getSyncUtil();
+  syncUtil.resetCounters();
   timer = setInterval(async () => {
-    if (isElectron) {
-      let stats = await window
-        .require("electron")
-        .ipcRenderer.invoke("cloud-stats", config);
-      if (stats.total > 0) {
-        toast.loading(
-          i18n.t("Start Transferring Data") +
-            " (" +
-            stats.completed +
-            "/" +
-            stats.total +
-            ")" +
-            " (" +
-            i18n.t(
-              driveList.find(
-                (item) =>
-                  item.value === ConfigService.getItem("defaultSyncOption")
-              )?.label || ""
-            ) +
-            ")",
-          {
-            id: "syncing",
-            position: "bottom-center",
-          }
-        );
-      }
-    } else {
-      let syncUtil = await SyncService.getSyncUtil();
-      let stats = await syncUtil.getStats();
-      if (stats.total > 0) {
-        toast.loading(
-          i18n.t("Start Transferring Data") +
-            " (" +
-            stats.completed +
-            "/" +
-            stats.total +
-            ")" +
-            " (" +
-            i18n.t(
-              driveList.find(
-                (item) =>
-                  item.value === ConfigService.getItem("defaultSyncOption")
-              )?.label || ""
-            ) +
-            ")",
-          {
-            id: "syncing",
-            position: "bottom-center",
-          }
-        );
-      }
+    let syncUtil = await SyncService.getSyncUtil();
+    let stats = await syncUtil.getStats();
+    if (stats.total > 0) {
+      toast.loading(
+        i18n.t("Start Transferring Data") +
+          " (" +
+          stats.completed +
+          "/" +
+          stats.total +
+          ")" +
+          " (" +
+          i18n.t(
+            driveList.find(
+              (item) =>
+                item.value === ConfigService.getItem("defaultSyncOption")
+            )?.label || ""
+          ) +
+          ")",
+        {
+          id: "syncing",
+          position: "bottom-center",
+        }
+      );
     }
   }, 1000);
   return timer;
@@ -1104,20 +896,8 @@ export const getTaskStats = async () => {
     toast(i18n.t("Please add data source in the setting"));
     return {};
   }
-  if (isElectron) {
-    let tokenConfig = await getCloudConfig(service);
-    let config = {
-      ...tokenConfig,
-      service: service,
-      storagePath: getStorageLocation(),
-    };
-    return await window
-      .require("electron")
-      .ipcRenderer.invoke("cloud-stats", config);
-  } else {
-    let syncUtil = await SyncService.getSyncUtil();
-    return await syncUtil.getStats();
-  }
+  let syncUtil = await SyncService.getSyncUtil();
+  return await syncUtil.getStats();
 };
 export const compareVersions = (version1: string, version2: string) => {
   // Split strings by '.' and convert segments to numbers
@@ -1143,32 +923,11 @@ export const compareVersions = (version1: string, version2: string) => {
   return 0; // Versions are equal
 };
 export const clearAllData = async () => {
-  let deviceUuid = "";
-  if (!isElectron) {
-    deviceUuid = ConfigService.getItem("fingerPrint") || "";
-  }
+  let deviceUuid = ConfigService.getItem("fingerPrint") || "";
   localStorage.clear();
   sessionStorage.clear();
-  if (deviceUuid && !isElectron) {
+  if (deviceUuid) {
     ConfigService.setItem("fingerPrint", deviceUuid);
-  }
-  //clear all indexed db data
-
-  if (isElectron) {
-    let storageLocation = getStorageLocation();
-    const fs = window.require("fs");
-    let databaseList = CommonTool.databaseList;
-    for (let i = 0; i < databaseList.length; i++) {
-      await window.require("electron").ipcRenderer.invoke("close-database", {
-        dbName: databaseList[i],
-        storagePath: getStorageLocation(),
-      });
-    }
-    if (fs.existsSync(storageLocation)) {
-      fs.rmSync(storageLocation, { recursive: true, force: true });
-    }
-    const { ipcRenderer } = window.require("electron");
-    ipcRenderer.invoke("clear-all-data", {});
   }
   await localforage.clear();
 };
@@ -1198,19 +957,12 @@ export const handleAutoCloudSync = async () => {
     syncRes.data.default_sync_token
   ) {
     let supportedSources = driveList
-      .filter((item) => {
-        if (isElectron) {
-          return item.support.includes("desktop");
-        } else {
-          return item.support.includes("browser");
-        }
-      })
+      .filter((item) => item.support.includes("browser"))
       .map((item) => item.value);
     if (!supportedSources.includes(syncRes.data.default_sync_option)) {
       return false;
     }
     if (
-      !isElectron &&
       (syncRes.data.default_sync_option === "webdav" ||
         syncRes.data.default_sync_option === "s3compatible")
     ) {
@@ -1399,37 +1151,6 @@ export const trimSpecialCharacters = (text: string) => {
   return text.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
 };
 export const getICloudDrivePath = () => {
-  if (!isElectron) return "";
-  const fs = window.require("fs");
-  const path = window.require("path");
-  const os = window.require("os");
-
-  let iCloudPath = "";
-
-  // 自动检测iCloud Drive路径
-  if (isElectron && process.platform === "darwin") {
-    // macOS
-    const possiblePath = path.join(
-      os.homedir(),
-      "Library",
-      "Mobile Documents",
-      "iCloud~com~koodoreader~expo",
-      "Documents"
-    );
-    if (fs.existsSync(possiblePath)) {
-      iCloudPath = possiblePath;
-    }
-  }
-
-  // 如果自动检测失败，弹窗让用户手动选择
-  if (!iCloudPath || !fs.existsSync(iCloudPath)) {
-    return "";
-  }
-
-  // 验证路径是否有效
-  if (iCloudPath && fs.existsSync(iCloudPath)) {
-    return iCloudPath;
-  }
   return "";
 };
 export const prepareThirdConfig = async (service: string, config: any) => {
@@ -1469,12 +1190,6 @@ export const prepareThirdConfig = async (service: string, config: any) => {
       await TokenService.setToken(targetDrive + "_token", "");
       SyncService.removeSyncUtil(targetDrive);
       removeCloudConfig(targetDrive);
-      if (isElectron) {
-        const { ipcRenderer } = window.require("electron");
-        await ipcRenderer.invoke("cloud-close", {
-          service: targetDrive,
-        });
-      }
       ConfigService.deleteListConfig(targetDrive, "dataSourceList");
       if (targetDrive === ConfigService.getItem("defaultSyncOption")) {
         ConfigService.removeItem("defaultSyncOption");
@@ -1511,12 +1226,6 @@ export const prepareThirdConfig = async (service: string, config: any) => {
     }
     SyncService.removeSyncUtil(service);
     removeCloudConfig(service);
-    if (isElectron) {
-      const { ipcRenderer } = window.require("electron");
-      await ipcRenderer.invoke("cloud-close", {
-        service: service,
-      });
-    }
 
     return config;
   } else {

@@ -14,7 +14,6 @@ import {
 
 import DatabaseService from "../../../utils/storage/databaseService";
 import { ConfigService } from "../../../assets/lib/kookit-extra-browser.min";
-import { isElectron } from "react-device-detect";
 import { getPluginList } from "../../../utils/request/common";
 declare var global: any;
 class SettingDialog extends React.Component<
@@ -119,7 +118,7 @@ class SettingDialog extends React.Component<
                       return;
                     }
 
-                    if (plugin.type === "voice" && !isElectron) {
+                    if (plugin.type === "voice") {
                       toast.error(
                         this.props.t("Only desktop version supports TTS plugin")
                       );
@@ -365,7 +364,7 @@ class SettingDialog extends React.Component<
                         let plugin = item.plugin;
                         plugin.key = plugin.identifier;
 
-                        if (plugin.type === "voice" && !isElectron) {
+                        if (plugin.type === "voice") {
                           toast.error(
                             this.props.t(
                               "Only desktop version supports TTS plugin"

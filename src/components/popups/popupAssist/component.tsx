@@ -386,9 +386,9 @@ class PopupAssist extends React.Component<PopupAssistProps, PopupAssistState> {
   };
   render() {
     return (
-      <div className="dict-container">
+      <div className="dict-container popup-assist-container">
         <div
-          className="dict-service-container"
+          className="dict-service-container popup-assist-header"
           style={{
             display: "flex",
             justifyContent: "space-between",
@@ -398,6 +398,7 @@ class PopupAssist extends React.Component<PopupAssistProps, PopupAssistState> {
           }}
         >
           <div
+            className="popup-assist-mode-tabs"
             style={{
               display: "flex",
               alignItems: "center",
@@ -506,6 +507,7 @@ class PopupAssist extends React.Component<PopupAssistProps, PopupAssistState> {
         {!this.state.isAddNew && (
           <>
             <div
+              className="popup-assist-body"
               style={{
                 display: "flex",
                 flexDirection: "column",
@@ -515,7 +517,7 @@ class PopupAssist extends React.Component<PopupAssistProps, PopupAssistState> {
               }}
             >
               <div
-                className="dict-text-box"
+                className="dict-text-box popup-assist-chat"
                 style={{
                   flex: 1,
                   marginTop: "0px",
@@ -575,6 +577,7 @@ class PopupAssist extends React.Component<PopupAssistProps, PopupAssistState> {
                 )}
               </div>
               <div
+                className="popup-assist-footer"
                 style={{
                   marginLeft: "-25px",
                   marginRight: "-25px",
@@ -600,6 +603,7 @@ class PopupAssist extends React.Component<PopupAssistProps, PopupAssistState> {
                 </div>
 
                 <div
+                  className="popup-assist-input-row"
                   style={{
                     display: "flex",
                     alignItems: "flex-end",

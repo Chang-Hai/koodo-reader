@@ -27,31 +27,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ── Pre-build React app on native runner (eliminates QEMU overhead) ──────
+      # Build the Web app on the native runner. The Docker image is a static
+      # Caddy image and does not include the old Go httpserver.
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "yarn"
 
+      - name: Install Yarn
+        run: npm install -g yarn@1.22.22
+
       - name: Install JS dependencies
-        run: yarn --ignore-scripts --network-timeout 1000000
+        run: yarn install --frozen-lockfile --ignore-scripts --network-timeout 1000000
 
       - name: Build React app
-        run: yarn --ignore-scripts && yarn build
-
-      # ── Cross-compile Go binary for both platforms (eliminates QEMU overhead) ─
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: httpserver/go.mod
-          cache-dependency-path: httpserver/go.sum
-
-      - name: Cross-compile Go server (amd64 + arm64)
-        working-directory: httpserver
-        run: |
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o httpserver-linux-amd64 .
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o httpserver-linux-arm64 .
+        run: yarn build
 
       # Install the cosign tool except on PR
       # https://github.com/sigstore/cosign-installer

@@ -11,6 +11,7 @@ import { getServerRegion, reloadManager } from "../common";
 import { resetReaderRequest } from "./reader";
 import { resetUserRequest } from "./user";
 import { resetThirdpartyRequest } from "./thirdparty";
+import { isSelfHostedWebProUnlocked } from "../selfHostedWebUnlock";
 const PUBLIC_URL = "https://api.koodoreader.com";
 const CN_PUBLIC_URL = "https://api.koodoreader.cn";
 let cachedPluginList: any[] | null = null;
@@ -53,6 +54,11 @@ export const checkStableUpdate = async () => {
   return res.data.log;
 };
 export const handleExitApp = async () => {
+  if (isSelfHostedWebProUnlocked()) {
+    toast.error(i18n.t("Authorization failed, please login again"));
+    return;
+  }
+
   toast.error(i18n.t("Authorization failed, please login again"));
   await handleClearToken();
   //路由到login页面

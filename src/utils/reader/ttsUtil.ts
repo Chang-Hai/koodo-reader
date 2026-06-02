@@ -2,7 +2,6 @@ import { Howl } from "howler";
 import PluginModel from "../../models/Plugin";
 import { getAllVoices, getFormatFromAudioPath } from "../common";
 import { getTTSAudio } from "../request/reader";
-import { isElectron } from "react-device-detect";
 
 class TTSUtil {
   static player: any;
@@ -223,8 +222,8 @@ class TTSUtil {
     }
   }
   static async clearAudioPaths() {
-    if (!isElectron) return;
-    window.require("electron").ipcRenderer.invoke("clear-tts");
+    this.audioPaths = [];
+    this.processingIndexes.clear();
   }
   static getAudioPaths() {
     return this.audioPaths;
@@ -250,17 +249,8 @@ class TTSUtil {
         return res.data.audio_base64;
       }
       return "";
-    } else {
-      let audioPath = await window
-        .require("electron")
-        .ipcRenderer.invoke("generate-tts", {
-          text: text,
-          speed,
-          plugin: plugin,
-          config: voice.config,
-        });
-      return audioPath;
     }
+    return "";
   }
   static setAudioPaths() {
     this.audioPaths = [];
@@ -271,7 +261,9 @@ class TTSUtil {
     return this.player;
   }
   static getVoiceList(plugins: PluginModel[]) {
-    let voices = getAllVoices(plugins);
+    let voices = getAllVoices(
+      plugins.filter((item) => item.key === "official-ai-voice-plugin")
+    );
 
     return voices;
   }

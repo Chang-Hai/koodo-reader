@@ -20,7 +20,6 @@ import {
   KookitConfig,
   LoginHelper,
 } from "../../assets/lib/kookit-extra-browser.min";
-import { isElectron } from "react-device-detect";
 import { driveList } from "../../constants/driveList";
 import {
   getUserRequest,
@@ -31,6 +30,7 @@ import SettingDialog from "../../components/dialogs/settingDialog";
 import LoadingDialog from "../../components/dialogs/loadingDialog";
 import { resetReaderRequest } from "../../utils/request/reader";
 import { resetThirdpartyRequest } from "../../utils/request/thirdparty";
+import { isSelfHostedWebProUnlocked } from "../../utils/selfHostedWebUnlock";
 
 class Login extends React.Component<LoginProps, LoginState> {
   constructor(props: LoginProps) {
@@ -45,28 +45,15 @@ class Login extends React.Component<LoginProps, LoginState> {
   }
 
   componentDidMount() {
-    if (isElectron) {
-      const { ipcRenderer } = window.require("electron");
-      ipcRenderer.on("oauth-callback", (_event, config) => {
-        let code = config.code;
-        let state = config.state;
-        this.setState({ currentStep: 2 });
-        if (state) {
-          let { service } = JSON.parse(decodeURIComponent(state.split("|")[1]));
-          this.handleLogin(code, service);
-        }
-      });
-    } else {
-      let url = document.location.href;
-      if (url.indexOf("code") > -1) {
-        let params: any = getLoginParamsFromUrl();
-        let code = params.code;
-        let state = params.state;
-        this.setState({ currentStep: 2 });
-        if (state) {
-          let { service } = JSON.parse(decodeURIComponent(state.split("|")[1]));
-          this.handleLogin(code, service);
-        }
+    let url = document.location.href;
+    if (url.indexOf("code") > -1) {
+      let params: any = getLoginParamsFromUrl();
+      let code = params.code;
+      let state = params.state;
+      this.setState({ currentStep: 2 });
+      if (state) {
+        let { service } = JSON.parse(decodeURIComponent(state.split("|")[1]));
+        this.handleLogin(code, service);
       }
     }
   }
@@ -74,6 +61,10 @@ class Login extends React.Component<LoginProps, LoginState> {
     nextProps: Readonly<LoginProps>,
     nextContext: any
   ): void {
+    if (isSelfHostedWebProUnlocked()) {
+      return;
+    }
+
     if (
       nextProps.isShowSupport &&
       nextProps.isShowSupport !== this.props.isShowSupport
@@ -375,18 +366,14 @@ class Login extends React.Component<LoginProps, LoginState> {
                           }
                           let url = LoginHelper.getAuthUrl(
                             item.value,
-                            isElectron ? "desktop" : "browser",
+                            "browser",
                             getServerRegion() === "china" &&
                               item.value === "microsoft"
                               ? KookitConfig.ThirdpartyConfig.cnCallbackUrl
                               : KookitConfig.ThirdpartyConfig.callbackUrl
                           );
                           if (url) {
-                            if (isElectron) {
-                              openInBrowser(url);
-                            } else {
-                              window.location.replace(url);
-                            }
+                            window.location.replace(url);
                           }
                         }}
                       >
@@ -488,19 +475,7 @@ class Login extends React.Component<LoginProps, LoginState> {
               </div>
               <div className="login-sync-container">
                 {driveList
-                  .filter((item) => {
-                    if (!isElectron) {
-                      return item.support.includes("browser");
-                    } else {
-                      return true;
-                    }
-                  })
-                  .filter((item) => {
-                    if (isElectron && process.platform !== "darwin") {
-                      return item.value !== "icloud";
-                    }
-                    return true;
-                  })
+                  .filter((item) => item.support.includes("browser"))
                   .map((item) => {
                     return (
                       <div
@@ -519,16 +494,6 @@ class Login extends React.Component<LoginProps, LoginState> {
                         <div className="login-sync-icon-container">
                           <span className={"icon-add login-sync-icon"}></span>
                         </div>
-                        {ConfigService.getReaderConfig("lang") &&
-                          ConfigService.getReaderConfig("lang").startsWith(
-                            "zh"
-                          ) &&
-                          item.value === "webdav" &&
-                          isElectron && (
-                            <div className="login-sync-text">
-                              {this.props.t("Recommended (use with Nutstore)")}
-                            </div>
-                          )}
                         {ConfigService.getReaderConfig("lang") &&
                           ConfigService.getReaderConfig("lang").startsWith(
                             "zh"

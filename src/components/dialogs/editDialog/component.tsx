@@ -7,11 +7,9 @@ import { EditDialogProps, EditDialogState } from "./interface";
 import toast from "react-hot-toast";
 import DatabaseService from "../../../utils/storage/databaseService";
 import CoverUtil from "../../../utils/file/coverUtil";
-import { isElectron } from "react-device-detect";
 import MetadataDialog from "../metadataDialog";
 import { MetadataResult } from "../metadataDialog/interface";
 import { trimSpecialCharacters } from "../../../utils/common";
-declare var window: any;
 
 class EditDialog extends React.Component<EditDialogProps, EditDialogState> {
   private nameRef = React.createRef<HTMLInputElement>();
@@ -96,14 +94,6 @@ class EditDialog extends React.Component<EditDialogProps, EditDialogState> {
       this.setState({ coverPreview: base64 });
     };
     reader.readAsDataURL(file);
-  };
-
-  handleSelectBookPath = async () => {
-    if (!isElectron) return;
-    const { ipcRenderer } = window.require("electron");
-    const filePath = await ipcRenderer.invoke("select-file");
-    if (!filePath) return;
-    this.setState({ bookPath: filePath });
   };
 
   handleComfirm = async () => {
@@ -251,59 +241,6 @@ class EditDialog extends React.Component<EditDialogProps, EditDialogState> {
             />
           </div>
 
-          {/* Book path */}
-          {isElectron && (
-            <div className="edit-dialog-field">
-              <div className="edit-dialog-path-row">
-                <span className="edit-dialog-label">
-                  <Trans>Book path</Trans>
-                </span>
-
-                <div style={{ display: "flex", gap: "6px" }}>
-                  <span
-                    className="change-location-button"
-                    onClick={() => {
-                      const { ipcRenderer } = window.require("electron");
-                      const fs = window.require("fs");
-                      if (
-                        !this.state.bookPath ||
-                        !fs.existsSync(this.state.bookPath)
-                      ) {
-                        toast.error(this.props.t("Book not exists"));
-                        return;
-                      }
-                      ipcRenderer.invoke("open-explorer-folder", {
-                        path: this.state.bookPath,
-                        isFolder: false,
-                      });
-                    }}
-                  >
-                    <Trans>Locate</Trans>
-                  </span>
-                  <span
-                    className="change-location-button"
-                    onClick={this.handleSelectBookPath}
-                  >
-                    <Trans>Relink</Trans>
-                  </span>
-                </div>
-              </div>
-              <div
-                className="setting-dialog-location-title"
-                style={{
-                  width: "100%",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  margin: "0px",
-                  boxSizing: "border-box",
-                  marginTop: "4px",
-                  marginBottom: "4px",
-                }}
-              >
-                {this.state.bookPath || "-"}
-              </div>
-            </div>
-          )}
         </div>
 
         <div className="edit-dialog-footer">

@@ -1,7 +1,6 @@
 import React from "react";
 import { Trans } from "react-i18next";
 import { ConvertDialogProps, ConvertDialogState } from "./interface";
-import { isElectron } from "react-device-detect";
 import "./convertDialog.css";
 import { ConfigService } from "../../../assets/lib/kookit-extra-browser.min";
 import BookUtil from "../../../utils/file/bookUtil";
@@ -29,10 +28,7 @@ class ConvertDialog extends React.Component<
   renderSwitchOption = (optionList: any[]) => {
     return optionList.map((item) => {
       return (
-        <div
-          style={item.isElectron ? (isElectron ? {} : { display: "none" }) : {}}
-          key={item.propName}
-        >
+        <div key={item.propName}>
           <div
             className="setting-dialog-new-title"
             key={item.title}
@@ -115,7 +111,6 @@ class ConvertDialog extends React.Component<
           <ul className="sort-by-category">
             {this.renderSwitchOption([
               {
-                isElectron: false,
                 title: "Convert PDF to Text",
                 desc: "",
                 propName: "isConvertPDF",

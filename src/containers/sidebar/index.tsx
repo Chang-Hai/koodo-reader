@@ -19,6 +19,7 @@ const mapStateToProps = (state: stateType) => {
     isCollapsed: state.sidebar.isCollapsed,
     shelfTitle: state.sidebar.shelfTitle,
     isAuthed: state.manager.isAuthed,
+    isSettingOpen: state.manager.isSettingOpen,
     isOpenSortShelfDialog: state.backupPage.isOpenSortShelfDialog,
   };
 };

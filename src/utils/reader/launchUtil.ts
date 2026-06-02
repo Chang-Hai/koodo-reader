@@ -1,9 +1,6 @@
 import {
   browserName,
   browserVersion,
-  isElectron,
-  osName,
-  osVersion,
 } from "react-device-detect";
 import { ConfigService } from "../../assets/lib/kookit-extra-browser.min";
 import packageJson from "../../../package.json";
@@ -11,20 +8,14 @@ import BackgroundUtil from "../file/backgroundUtil";
 export const initTheme = () => {
   const style = document.createElement("link");
   style.rel = "stylesheet";
-  let isNight = false;
-  if (isElectron) {
-    const { ipcRenderer } = window.require("electron");
-    isNight = ipcRenderer.sendSync("system-color");
-  } else {
-    isNight =
-      window.matchMedia &&
-      window.matchMedia("(prefers-color-scheme: dark)").matches;
-  }
+  let isNight =
+    window.matchMedia &&
+    window.matchMedia("(prefers-color-scheme: dark)").matches;
   ConfigService.setReaderConfig("isOSNight", isNight ? "yes" : "no");
   ConfigService.setItem("appVersion", packageJson.version);
   ConfigService.setItem(
     "appPlatform",
-    isElectron ? osName + " " + osVersion : browserName + " " + browserVersion
+    browserName + " " + browserVersion
   );
   if (!ConfigService.getReaderConfig("appSkin")) {
     ConfigService.setReaderConfig("appSkin", "system");

@@ -13,7 +13,6 @@ import {
   sleep,
   splitSentences,
 } from "../../utils/common";
-import { isElectron } from "react-device-detect";
 import toast from "react-hot-toast";
 import TTSUtil from "../../utils/reader/ttsUtil";
 import "./textToSpeech.css";
@@ -113,17 +112,8 @@ class TextToSpeech extends React.Component<
       });
     };
     this.nativeVoices = await setSpeech();
-    if (isElectron) {
-      this.customVoices = TTSUtil.getVoiceList(this.props.plugins);
-      this.voices = [...this.nativeVoices, ...this.customVoices];
-    } else {
-      this.customVoices = getAllVoices(
-        this.props.plugins.filter(
-          (item) => item.key === "official-ai-voice-plugin"
-        )
-      );
-      this.voices = [...this.nativeVoices, ...this.customVoices];
-    }
+    this.customVoices = TTSUtil.getVoiceList(this.props.plugins);
+    this.voices = [...this.nativeVoices, ...this.customVoices];
     this.handleVoiceLocaleList();
     if (
       this.voices.length === 0 &&

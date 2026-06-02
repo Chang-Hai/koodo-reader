@@ -2,8 +2,6 @@ import React from "react";
 import { SettingInfoProps, SettingInfoState } from "./interface";
 import { Trans } from "react-i18next";
 import i18n from "../../../i18n";
-import { isElectron } from "react-device-detect";
-import _ from "underscore";
 import {
   generalSettingList,
   langList,
@@ -13,7 +11,6 @@ import {
 import toast from "react-hot-toast";
 import { ConfigService } from "../../../assets/lib/kookit-extra-browser.min";
 
-declare var window: any;
 class GeneralSetting extends React.Component<
   SettingInfoProps,
   SettingInfoState
@@ -22,11 +19,8 @@ class GeneralSetting extends React.Component<
     super(props);
     this.state = {
       isTouch: ConfigService.getReaderConfig("isTouch") === "yes",
-      isImportPath: ConfigService.getReaderConfig("isImportPath") === "yes",
-      isMergeWord: ConfigService.getReaderConfig("isMergeWord") === "yes",
       isPreventTrigger:
         ConfigService.getReaderConfig("isPreventTrigger") === "yes",
-      isPreventAdd: ConfigService.getReaderConfig("isPreventAdd") === "yes",
       isOpenBook: ConfigService.getReaderConfig("isOpenBook") === "yes",
       isDisablePopup: ConfigService.getReaderConfig("isDisablePopup") === "yes",
       isDisableTrashBin:
@@ -35,25 +29,12 @@ class GeneralSetting extends React.Component<
         ConfigService.getReaderConfig("isDeleteShelfBook") === "yes",
       isHideShelfBook:
         ConfigService.getReaderConfig("isHideShelfBook") === "yes",
-      isPreventSleep: ConfigService.getReaderConfig("isPreventSleep") === "yes",
-      isAlwaysOnTop: ConfigService.getReaderConfig("isAlwaysOnTop") === "yes",
-      isAutoMaximizeWin:
-        ConfigService.getReaderConfig("isAutoMaximizeWin") === "yes",
-      isAutoLaunch: ConfigService.getReaderConfig("isAutoLaunch") === "yes",
-      isMinimizeToTray:
-        ConfigService.getReaderConfig("isMinimizeToTray") === "yes",
-      isOpenInMain: ConfigService.getReaderConfig("isOpenInMain") === "yes",
       isDisableAI: ConfigService.getReaderConfig("isDisableAI") === "yes",
       isUseOriginalName:
         ConfigService.getReaderConfig("isUseOriginalName") === "yes",
       isExportOriginalName:
         ConfigService.getReaderConfig("isExportOriginalName") === "yes",
-      isDisableUpdate:
-        ConfigService.getReaderConfig("isDisableUpdate") === "yes",
       isPrecacheBook: ConfigService.getReaderConfig("isPrecacheBook") === "yes",
-      isUseBuiltIn: ConfigService.getReaderConfig("isUseBuiltIn") === "yes",
-      isDeleteOriginal:
-        ConfigService.getReaderConfig("isDeleteOriginal") === "yes",
       isDisablePDFCover:
         ConfigService.getReaderConfig("isDisablePDFCover") === "yes",
       startupShelf: ConfigService.getReaderConfig("startupShelf") || "",
@@ -80,48 +61,10 @@ class GeneralSetting extends React.Component<
     this.handleRest(this.state[stateName]);
   };
 
-  handleOpenInMain = () => {
-    if (this.state.isMergeWord && !this.state.isOpenInMain) {
-      toast(this.props.t("Please turn off merge with word first"));
-      return;
-    }
-    this.handleSetting("isOpenInMain");
-  };
-  handleAlwaysOnTop = () => {
-    const { ipcRenderer } = window.require("electron");
-    ipcRenderer.invoke("set-always-on-top", {
-      isAlwaysOnTop: this.state.isAlwaysOnTop ? "no" : "yes",
-    });
-    this.handleSetting("isAlwaysOnTop");
-  };
-  handleMaximizeWin = () => {
-    const { ipcRenderer } = window.require("electron");
-    ipcRenderer.invoke("set-auto-maximize", {
-      isAutoMaximizeWin: this.state.isAutoMaximizeWin ? "no" : "yes",
-    });
-    this.handleSetting("isAutoMaximizeWin");
-  };
-  handleAutoLaunch = () => {
-    const { ipcRenderer } = window.require("electron");
-    ipcRenderer.invoke("toggle-auto-launch", {
-      isAutoLaunch: this.state.isAutoLaunch ? "no" : "yes",
-    });
-    this.handleSetting("isAutoLaunch");
-  };
-  handleMinimizeToTray = () => {
-    const { ipcRenderer } = window.require("electron");
-    ipcRenderer.invoke("toggle-minimize-to-tray", {
-      isMinimizeToTray: this.state.isMinimizeToTray ? "no" : "yes",
-    });
-    this.handleSetting("isMinimizeToTray");
-  };
   renderSwitchOption = (optionList: any[]) => {
     return optionList.map((item) => {
       return (
-        <div
-          style={item.isElectron ? (isElectron ? {} : { display: "none" }) : {}}
-          key={item.propName}
-        >
+        <div key={item.propName}>
           <div className="setting-dialog-new-title" key={item.title}>
             <span style={{ width: "calc(100% - 100px)" }}>
               <Trans>{item.title}</Trans>
@@ -130,26 +73,7 @@ class GeneralSetting extends React.Component<
             <span
               className="single-control-switch"
               onClick={() => {
-                switch (item.propName) {
-                  case "isOpenInMain":
-                    this.handleOpenInMain();
-                    break;
-                  case "isAlwaysOnTop":
-                    this.handleAlwaysOnTop();
-                    break;
-                  case "isAutoMaximizeWin":
-                    this.handleMaximizeWin();
-                    break;
-                  case "isAutoLaunch":
-                    this.handleAutoLaunch();
-                    break;
-                  case "isMinimizeToTray":
-                    this.handleMinimizeToTray();
-                    break;
-                  default:
-                    this.handleSetting(item.propName);
-                    break;
-                }
+                this.handleSetting(item.propName);
               }}
               style={this.state[item.propName] ? {} : { opacity: 0.6 }}
             >
@@ -176,29 +100,10 @@ class GeneralSetting extends React.Component<
       );
     });
   };
-  handleResetMainPosition = () => {
-    window
-      .require("electron")
-      .ipcRenderer.invoke("reset-main-position", "ping");
-    toast.success(this.props.t("Reset successful"));
-  };
   render() {
     return (
       <>
         {this.renderSwitchOption(generalSettingList)}
-
-        <div className="setting-dialog-new-title">
-          <Trans>Reset main window's position</Trans>
-
-          <span
-            className="change-location-button"
-            onClick={() => {
-              this.handleResetMainPosition();
-            }}
-          >
-            <Trans>Reset</Trans>
-          </span>
-        </div>
 
         <div className="setting-dialog-new-title">
           <Trans>Language</Trans>

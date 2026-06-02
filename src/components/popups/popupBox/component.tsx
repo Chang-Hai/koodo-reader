@@ -6,7 +6,6 @@ import PopupDict from "../popupDict";
 import { PopupBoxProps, PopupBoxStates } from "./interface";
 import { getIframeDoc } from "../../../utils/reader/docUtil";
 import PopupAssist from "../popupAssist";
-import { isElectron } from "react-device-detect";
 import { ConfigService } from "../../../assets/lib/kookit-extra-browser.min";
 
 const POPUP_SIZE_KEY = "popupBoxSize";
@@ -72,13 +71,6 @@ class PopupBox extends React.Component<PopupBoxProps, PopupBoxStates> {
   }
 
   componentDidMount(): void {
-    if (isElectron) {
-      const { ipcRenderer } = window.require("electron");
-      let isShowUrl = ipcRenderer.sendSync("url-window-status", {
-        type: this.props.menuMode,
-      });
-      this.setState({ isShowUrl });
-    }
     document.addEventListener("mousemove", this.handleResizeMove);
     document.addEventListener("mouseup", this.handleResizeEnd);
   }
@@ -142,7 +134,7 @@ class PopupBox extends React.Component<PopupBoxProps, PopupBoxStates> {
         }}
       >
         <div
-          className="popup-box-container"
+          className={`popup-box-container popup-box-container-${this.props.menuMode}`}
           style={{
             marginLeft:
               this.props.isNavLocked && !this.props.isSettingLocked

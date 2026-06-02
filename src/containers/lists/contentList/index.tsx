@@ -13,6 +13,7 @@ const mapStateToProps = (state: stateType) => {
     renderBookFunc: state.book.renderBookFunc,
     currentChapter: state.reader.currentChapter,
     currentChapterIndex: state.reader.currentChapterIndex,
+    isAuthed: state.manager.isAuthed,
   };
 };
 const actionCreator = { handleCurrentChapter, handleCurrentChapterIndex };

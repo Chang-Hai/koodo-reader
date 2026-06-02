@@ -23,6 +23,12 @@ import { langToName } from "../../utils/common";
 import { resetReaderRequest } from "../../utils/request/reader";
 import { resetThirdpartyRequest } from "../../utils/request/thirdparty";
 import DictUtil from "../../utils/file/dictUtil";
+import {
+  buildSelfHostedUnlockedUserInfo,
+  isSelfHostedOfflineFirst,
+  isSelfHostedWebProUnlocked,
+  shouldTreatSelfHostedWebAsAuthed,
+} from "../../utils/selfHostedWebUnlock";
 export function handleBooks(books: BookModel[]) {
   return { type: "HANDLE_BOOKS", payload: books };
 }
@@ -86,6 +92,9 @@ export function handleNewWarning(isNewWarning: boolean) {
   return { type: "HANDLE_NEW_WARNING", payload: isNewWarning };
 }
 export function handleShowSupport(isShowSupport: boolean) {
+  if (isShowSupport && isSelfHostedWebProUnlocked()) {
+    return { type: "HANDLE_SHOW_SUPPORT", payload: false };
+  }
   return { type: "HANDLE_SHOW_SUPPORT", payload: isShowSupport };
 }
 export function handleLoadMore(isLoadMore: boolean) {
@@ -222,6 +231,35 @@ export function handleFetchBooks() {
 }
 export function handleFetchUserInfo() {
   return async (dispatch: Dispatch) => {
+    if (isSelfHostedWebProUnlocked()) {
+      let userInfo: any = null;
+      let accessToken = isSelfHostedOfflineFirst()
+        ? null
+        : await TokenService.getToken("access_token");
+
+      if (accessToken) {
+        try {
+          let userRequest = await getUserRequest();
+          let response = await userRequest.getUserInfo();
+          if (response.code === 200) {
+            userInfo = response.data;
+          }
+        } catch (error) {
+          console.error(error);
+        }
+      }
+
+      userInfo = buildSelfHostedUnlockedUserInfo(userInfo);
+      ConfigService.setReaderConfig(
+        "isEnableKoodoSync",
+        userInfo.is_enable_koodo_sync || "no"
+      );
+      ConfigService.setReaderConfig("isProUpgraded", "yes");
+      dispatch(handleShowSupport(false));
+      dispatch(handleUserInfo(userInfo));
+      return userInfo;
+    }
+
     let response = await fetchUserInfo();
     let userInfo: any = null;
     if (response.code === 200) {
@@ -395,7 +433,7 @@ export function handleFetchPlugins() {
           }
         }
         TokenService.getToken("is_authed").then((value) => {
-          let isAuthed = value === "yes";
+          let isAuthed = shouldTreatSelfHostedWebAsAuthed(value === "yes");
           if (
             isAuthed &&
             ConfigService.getReaderConfig("isDisableAI") !== "yes"
@@ -552,10 +590,20 @@ export function handleFetchPlugins() {
 export function handleFetchAuthed() {
   return (dispatch: Dispatch) => {
     try {
-      TokenService.getToken("is_authed").then((value) => {
-        let isAuthed = value === "yes";
+      TokenService.getToken("is_authed").then(async (value) => {
+        if (isSelfHostedWebProUnlocked() && value !== "yes") {
+          await TokenService.setToken("is_authed", "yes");
+          value = "yes";
+        }
+
+        let isAuthed = shouldTreatSelfHostedWebAsAuthed(value === "yes");
         if (isAuthed && !ConfigService.getItem("serverRegion")) {
           ConfigService.setItem("serverRegion", "global");
+        }
+        if (isSelfHostedWebProUnlocked()) {
+          ConfigService.setReaderConfig("isProUpgraded", "yes");
+          dispatch(handleShowSupport(false));
+          dispatch(handleUserInfo(buildSelfHostedUnlockedUserInfo(null)));
         }
         dispatch(handleAuthed(isAuthed));
       });

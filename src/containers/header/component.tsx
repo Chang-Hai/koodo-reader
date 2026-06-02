@@ -5,19 +5,16 @@ import ImportLocal from "../../components/importLocal";
 import { HeaderProps, HeaderState } from "./interface";
 import {
   ConfigService,
-  KookitConfig,
   TokenService,
 } from "../../assets/lib/kookit-extra-browser.min";
 import UpdateInfo from "../../components/dialogs/updateDialog";
 import { restoreFromConfigJson } from "../../utils/file/restore";
-import { backupToConfigJson, generateSnapshot } from "../../utils/file/backup";
-import { isElectron } from "react-device-detect";
+import { backupToConfigJson } from "../../utils/file/backup";
 import {
   getCloudConfig,
   getLastSyncTimeFromConfigJson,
   removeCloudConfig,
   upgradeConfig,
-  upgradeStorage,
 } from "../../utils/file/common";
 import toast from "react-hot-toast";
 import { Trans } from "react-i18next";
@@ -35,7 +32,6 @@ import {
   checkBrokenDatabase,
   checkMissingBook,
   generateSyncRecord,
-  getChatLocale,
   getTaskStats,
   getWebsiteUrl,
   openInBrowser,
@@ -48,10 +44,13 @@ import { driveList } from "../../constants/driveList";
 import SupportDialog from "../../components/dialogs/supportDialog";
 import SyncService from "../../utils/storage/syncService";
 import { LocalFileManager } from "../../utils/file/localFile";
-import packageJson from "../../../package.json";
 import { getTempToken, updateUserConfig } from "../../utils/request/user";
 import i18n from "../../i18n";
-declare var window: any;
+import {
+  bootstrapSelfHostedServerStorage,
+  shouldSuppressSelfHostedLocalFolderPrompt,
+} from "../../utils/selfHostedServerStorage";
+import { isSelfHostedOfflineFirst } from "../../utils/selfHostedWebUnlock";
 
 class Header extends React.Component<HeaderProps, HeaderState> {
   timer: any;
@@ -71,112 +70,41 @@ class Header extends React.Component<HeaderProps, HeaderState> {
     };
   }
   async componentDidMount() {
-    if (isElectron) {
-      try {
-        await generateSnapshot();
-      } catch (error) {
-        console.error("Failed to generate snapshot:", error);
-      }
-    }
     this.props.handleFetchAuthed();
+    if (isSelfHostedOfflineFirst()) {
+      ConfigService.setReaderConfig("isDisableAutoSync", "yes");
+      ConfigService.setReaderConfig("isUseLocal", "no");
+    }
+    const didBootstrapSelfHostedStorage =
+      await bootstrapSelfHostedServerStorage();
     this.props.handleFetchDefaultSyncOption();
     this.props.handleFetchDataSourceList();
-    if (isElectron) {
-      const fs = window.require("fs");
-      const path = window.require("path");
-      const { ipcRenderer } = window.require("electron");
-      const dirPath = ipcRenderer.sendSync("user-data", "ping");
-      if (!fs.existsSync(dirPath)) {
-        fs.mkdirSync(path.join(dirPath, "data", "book"), { recursive: true });
-      }
-
-      if (
-        ConfigService.getReaderConfig("storageLocation") &&
-        !ConfigService.getItem("storageLocation")
-      ) {
-        ConfigService.setItem(
-          "storageLocation",
-          ConfigService.getReaderConfig("storageLocation")
-        );
-      }
-      if (ConfigService.getReaderConfig("isHidePro") === "yes") {
-        this.setState({ isHidePro: true });
-      }
-
-      //Check for data update
-      //upgrade data from old version
-      let res1 = await upgradeStorage(this.handleFinishUpgrade);
-      let res2 = upgradeConfig();
-      if (!res1 || !res2) {
-        console.error("upgrade failed");
-      }
-
-      //Detect data modification
-      let lastSyncTime = getLastSyncTimeFromConfigJson();
-      if (
-        ConfigService.getItem("lastSyncTime") &&
-        lastSyncTime > parseInt(ConfigService.getItem("lastSyncTime") || "0")
-      ) {
-        this.setState({ isDataChange: true });
-      }
-
-      ipcRenderer.on("reading-finished", async (event: any, config: any) => {
-        this.handleFinishReading();
-      });
-      ipcRenderer.on(
-        "open-book-from-link",
-        async (_event: any, config: any) => {
-          const book = await DatabaseService.getRecord(config.bookKey, "books");
-          if (book) {
-            BookUtil.redirectBook(book);
-          }
-        }
-      );
-      ipcRenderer.on(
-        "open-note-from-link",
-        async (_event: any, config: any) => {
-          const note = await DatabaseService.getRecord(config.noteKey, "notes");
-          if (!note) return;
-          const book = await DatabaseService.getRecord(note.bookKey, "books");
-          if (!book) return;
-          let bookLocation: any = {};
-          try {
-            bookLocation = JSON.parse(note.cfi) || {};
-          } catch (error) {
-            bookLocation.cfi = note.cfi;
-            bookLocation.chapterTitle = note.chapter;
-          }
-          if (bookLocation.fingerprint) {
-            bookLocation.chapterDocIndex = bookLocation.page - 1 + "";
-            bookLocation.chapterHref = "title" + (bookLocation.page - 1);
-          }
-          ConfigService.setObjectConfig(
-            note.bookKey,
-            bookLocation,
-            "recordLocation"
-          );
-          BookUtil.redirectBook(book);
-        }
-      );
-    } else {
-      upgradeConfig();
-      const status = await LocalFileManager.getPermissionStatus();
-      if (
-        !ConfigService.getReaderConfig("isUseLocal") &&
-        LocalFileManager.isSupported()
-      ) {
-        this.props.handleLocalFileDialog(true);
-      } else if (
-        ConfigService.getReaderConfig("isUseLocal") === "yes" &&
-        !status.directoryName
-      ) {
-        this.props.handleLocalFileDialog(true);
-      } else if (
-        ConfigService.getReaderConfig("isUseLocal") === "yes" &&
-        (status.needsReauthorization || !status.hasAccess)
-      ) {
-        this.props.handleLocalFileDialog(true);
-      }
+    if (didBootstrapSelfHostedStorage) {
+      this.props.handleFetchBooks();
+    }
+    upgradeConfig();
+    if (ConfigService.getReaderConfig("isHidePro") === "yes") {
+      this.setState({ isHidePro: true });
+    }
+    const status = await LocalFileManager.getPermissionStatus();
+    if (shouldSuppressSelfHostedLocalFolderPrompt()) {
+      ConfigService.setReaderConfig("isUseLocal", "no");
+      this.props.handleLocalFileDialog(false);
+    } else if (
+      !ConfigService.getReaderConfig("isUseLocal") &&
+      LocalFileManager.isSupported()
+    ) {
+      this.props.handleLocalFileDialog(true);
+    } else if (
+      ConfigService.getReaderConfig("isUseLocal") === "yes" &&
+      !status.directoryName
+    ) {
+      this.props.handleLocalFileDialog(true);
+    } else if (
+      ConfigService.getReaderConfig("isUseLocal") === "yes" &&
+      (status.needsReauthorization || !status.hasAccess)
+    ) {
+      this.props.handleLocalFileDialog(true);
     }
     window.addEventListener("resize", () => {
       this.setState({ width: document.body.clientWidth });
@@ -185,7 +113,6 @@ class Header extends React.Component<HeaderProps, HeaderState> {
     document.addEventListener("visibilitychange", async (event) => {
       if (
         document.visibilityState === "visible" &&
-        !isElectron &&
         ConfigService.getReaderConfig("isFinishWebReading") === "yes"
       ) {
         await this.handleFinishReading();
@@ -193,6 +120,7 @@ class Header extends React.Component<HeaderProps, HeaderState> {
       }
     });
     let willAutoSync =
+      !isSelfHostedOfflineFirst() &&
       ConfigService.getReaderConfig("isDisableAutoSync") !== "yes" &&
       ConfigService.getItem("defaultSyncOption");
     if (!willAutoSync) {
@@ -214,7 +142,7 @@ class Header extends React.Component<HeaderProps, HeaderState> {
     const intervalMinutes = parseInt(
       ConfigService.getReaderConfig("scheduledSyncInterval") || "0"
     );
-    if (!intervalMinutes || intervalMinutes <= 0) {
+    if (isSelfHostedOfflineFirst() || !intervalMinutes || intervalMinutes <= 0) {
       return;
     }
     const intervalMs = intervalMinutes * 60 * 1000;
@@ -245,10 +173,7 @@ class Header extends React.Component<HeaderProps, HeaderState> {
     _nextContext: any
   ) {
     if (nextProps.isAuthed && nextProps.isAuthed !== this.props.isAuthed) {
-      if (isElectron) {
-      } else {
-        addChatBox();
-      }
+      addChatBox();
       if (ConfigService.getReaderConfig("isProUpgraded") !== "yes") {
         try {
           ConfigService.setReaderConfig("isProUpgraded", "yes");
@@ -259,6 +184,7 @@ class Header extends React.Component<HeaderProps, HeaderState> {
       }
       let userInfo = await this.props.handleFetchUserInfo();
       if (
+        !isSelfHostedOfflineFirst() &&
         ConfigService.getReaderConfig("isDisableAutoSync") !== "yes" &&
         ConfigService.getItem("defaultSyncOption")
       ) {
@@ -268,23 +194,13 @@ class Header extends React.Component<HeaderProps, HeaderState> {
       }
     }
     if (!nextProps.isAuthed && nextProps.isAuthed !== this.props.isAuthed) {
-      if (isElectron) {
-      } else {
-        removeChatBox();
-      }
+      removeChatBox();
     }
   }
   handleOpenLastReadBook = async () => {
-    let filePath = "";
-    //open book when app start
-    if (isElectron) {
-      const { ipcRenderer } = window.require("electron");
-      filePath = ipcRenderer.sendSync("check-file-data");
-    }
     if (
       ConfigService.getReaderConfig("isOpenBook") === "yes" &&
-      !this.props.currentBook.key &&
-      !filePath
+      !this.props.currentBook.key
     ) {
       let lastReadBookKey = ConfigService.getAllListConfig("recentBooks")[0];
       if (lastReadBookKey) {
@@ -302,6 +218,7 @@ class Header extends React.Component<HeaderProps, HeaderState> {
   handleFinishReading = async () => {
     if (
       ConfigService.getReaderConfig("isDisableAutoSync") !== "yes" &&
+      !isSelfHostedOfflineFirst() &&
       ConfigService.getItem("defaultSyncOption") &&
       !this.state.isSync
     ) {
@@ -444,12 +361,6 @@ class Header extends React.Component<HeaderProps, HeaderState> {
       await TokenService.setToken(targetDrive + "_token", "");
       SyncService.removeSyncUtil(targetDrive);
       removeCloudConfig(targetDrive);
-      if (isElectron) {
-        const { ipcRenderer } = window.require("electron");
-        await ipcRenderer.invoke("cloud-close", {
-          service: targetDrive,
-        });
-      }
       ConfigService.deleteListConfig(targetDrive, "dataSourceList");
       this.props.handleFetchDataSourceList();
       if (targetDrive === ConfigService.getItem("defaultSyncOption")) {
@@ -555,9 +466,7 @@ class Header extends React.Component<HeaderProps, HeaderState> {
     return;
   };
   handleSuccess = async () => {
-    if (ConfigService.getItem("isFinshReading") !== "yes" || !isElectron) {
-      this.props.handleFetchBooks();
-    }
+    this.props.handleFetchBooks();
 
     this.props.handleFetchBookmarks();
     this.props.handleFetchNotes();
@@ -703,34 +612,6 @@ class Header extends React.Component<HeaderProps, HeaderState> {
         className="header"
         style={this.props.isCollapsed ? { marginLeft: "40px" } : {}}
       >
-        {isElectron && this.props.isAuthed && (
-          <div
-            className="header-chat-widget"
-            onClick={() => {
-              window.require("electron").ipcRenderer.invoke("new-chat", {
-                url:
-                  getWebsiteUrl() +
-                  (ConfigService.getReaderConfig("lang").startsWith("zh")
-                    ? "/zh/faq"
-                    : "/en/faq") +
-                  "?referer=app&version=" +
-                  packageJson.version +
-                  "&client=desktop",
-                locale: getChatLocale(),
-              });
-            }}
-          >
-            <img
-              src={require("../../assets/images/chat-widget.png")}
-              alt="logo"
-              className="login-mobile-qr"
-              style={{
-                width: "100%",
-                height: "100%",
-              }}
-            />
-          </div>
-        )}
         <div
           className="header-search-container"
           style={this.props.isCollapsed ? { width: "369px" } : {}}
@@ -800,7 +681,11 @@ class Header extends React.Component<HeaderProps, HeaderState> {
           <div
             className="setting-icon-container"
             onClick={async () => {
-              if (!isElectron && !this.props.isAuthed) {
+              if (isSelfHostedOfflineFirst()) {
+                toast(this.props.t("All books are stored locally on this device"));
+                return;
+              }
+              if (!this.props.isAuthed) {
                 toast(
                   this.props.t("Please upgrade to Pro to use this feature")
                 );
@@ -843,8 +728,7 @@ class Header extends React.Component<HeaderProps, HeaderState> {
               style={{ textDecoration: "underline" }}
               onClick={() => {
                 if (
-                  window.location.hostname !== "web.koodoreader.com" &&
-                  !isElectron
+                  window.location.hostname !== "web.koodoreader.com"
                 ) {
                   this.props.handleSetting(true);
                   this.props.handleSettingMode("account");
@@ -955,21 +839,6 @@ class Header extends React.Component<HeaderProps, HeaderState> {
             </span>
           </div>
         ) : null}
-        {KookitConfig.CloudMode !== "production" ? (
-          <div className="header-report-container" style={{ right: "300px" }}>
-            <span
-              style={{
-                color: "red",
-                opacity: 1,
-                fontWeight: "bold",
-              }}
-            >
-              <Trans>TEST</Trans>
-              <span> </span>
-            </span>
-          </div>
-        ) : null}
-
         <ImportLocal
           {...({
             handleDrag: this.props.handleDrag,

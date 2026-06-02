@@ -499,6 +499,34 @@ class Viewer extends React.Component<ViewerProps, ViewerState> {
       this.props.currentBook.format,
       this.props.currentBook.key
     );
+    const updatePdfChapterDocIndex = (event: Event) => {
+      if (
+        this.props.currentBook.format === "PDF" &&
+        !ConfigService.getAllListConfig("convertPDFBooks").includes(
+          this.props.currentBook.key
+        )
+      ) {
+        let ownerDoc = (event.target as HTMLElement).ownerDocument;
+        let targetIframe = ownerDoc?.defaultView?.frameElement;
+        let id = targetIframe?.getAttribute("id") || "";
+        let chapterDocIndex = id ? parseInt(id.split("-").reverse()[0]) : 0;
+        this.setState({ chapterDocIndex });
+      }
+    };
+    const updateSelectionRect = (doc: Document) => {
+      if (this.state.isDisablePopup) return;
+      let selection = doc.getSelection();
+      if (
+        !selection ||
+        selection.rangeCount === 0 ||
+        selection.toString().trim().length === 0
+      ) {
+        return;
+      }
+
+      let rect = selection.getRangeAt(0).getBoundingClientRect();
+      this.setState({ rect });
+    };
     for (let i = 0; i < docs.length; i++) {
       let doc = docs[i];
       if (!doc) continue;
@@ -509,18 +537,7 @@ class Viewer extends React.Component<ViewerProps, ViewerState> {
         this.props.handleLeaveReader("bottom");
       });
       doc.addEventListener("mouseup", (event) => {
-        if (
-          this.props.currentBook.format === "PDF" &&
-          !ConfigService.getAllListConfig("convertPDFBooks").includes(
-            this.props.currentBook.key
-          )
-        ) {
-          let ownerDoc = (event.target as HTMLElement).ownerDocument;
-          let targetIframe = ownerDoc?.defaultView?.frameElement;
-          let id = targetIframe?.getAttribute("id") || "";
-          let chapterDocIndex = id ? parseInt(id.split("-").reverse()[0]) : 0;
-          this.setState({ chapterDocIndex });
-        }
+        updatePdfChapterDocIndex(event);
 
         if (this.state.isDisablePopup) {
           if (doc!.getSelection()!.toString().trim().length === 0) {
@@ -538,19 +555,12 @@ class Viewer extends React.Component<ViewerProps, ViewerState> {
         var rect = selection.getRangeAt(0).getBoundingClientRect();
         this.setState({ rect });
       });
+      doc.addEventListener("touchend", (event) => {
+        updatePdfChapterDocIndex(event);
+        window.setTimeout(() => updateSelectionRect(doc), 120);
+      });
       doc.addEventListener("contextmenu", (event) => {
-        if (
-          this.props.currentBook.format === "PDF" &&
-          !ConfigService.getAllListConfig("convertPDFBooks").includes(
-            this.props.currentBook.key
-          )
-        ) {
-          let ownerDoc = (event.target as HTMLElement).ownerDocument;
-          let targetIframe = ownerDoc?.defaultView?.frameElement;
-          let id = targetIframe?.getAttribute("id") || "";
-          let chapterDocIndex = id ? parseInt(id.split("-").reverse()[0]) : 0;
-          this.setState({ chapterDocIndex });
-        }
+        updatePdfChapterDocIndex(event);
         if (document.location.href.indexOf("localhost") === -1) {
           event.preventDefault();
         }

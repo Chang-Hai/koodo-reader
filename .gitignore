@@ -17,6 +17,8 @@ dist/
 /.vscode
 /.claude
 /.worktrees
+/.playwright-cli
+/android/.idea
 
 # misc
 .DS_Store

@@ -1,7 +1,6 @@
 import React from "react";
 import { SettingInfoProps, SettingInfoState } from "./interface";
 import { Trans } from "react-i18next";
-import { isElectron } from "react-device-detect";
 import toast from "react-hot-toast";
 import { ConfigService } from "../../../assets/lib/kookit-extra-browser.min";
 import {
@@ -151,10 +150,7 @@ class AppearanceSetting extends React.Component<
   renderSwitchOption = (optionList: any[]) => {
     return optionList.map((item) => {
       return (
-        <div
-          style={item.isElectron ? (isElectron ? {} : { display: "none" }) : {}}
-          key={item.propName}
-        >
+        <div key={item.propName}>
           <div className="setting-dialog-new-title" key={item.title}>
             <span style={{ width: "calc(100% - 100px)" }}>
               <Trans>{item.title}</Trans>

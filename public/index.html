@@ -3,8 +3,17 @@
   <head>
     <meta charset="utf-8" />
     <link rel="icon" href="%PUBLIC_URL%/favicon.png" />
-    <link rel="dns-prefetch" href="https://web.koodoreader.com" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/assets/icon.png" />
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.webmanifest" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#f8f7f3" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Koodo Reader" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <style>
       #root {
         height: 100%;
@@ -15,6 +24,9 @@
       }
     </style>
     <title>Koodo Reader</title>
+    <meta name="koodo-self-hosted-pro-unlock" content="true" />
+    <meta name="koodo-self-hosted-offline-first" content="true" />
+    <meta name="koodo-self-hosted-server-storage" content="false" />
     <script
       type="text/javascript"
       src="%PUBLIC_URL%/lib/7z-wasm/7zz.umd.js"

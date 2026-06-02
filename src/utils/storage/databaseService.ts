@@ -1,10 +1,7 @@
-import { isElectron } from "react-device-detect";
-import { getStorageLocation } from "../common";
 import localforage from "localforage";
 import SqlUtil from "../file/sqlUtil";
 import { ConfigService } from "../../assets/lib/kookit-extra-browser.min";
 import { LocalFileManager } from "../file/localFile";
-declare var window: any;
 
 class DatabaseService {
   static async getDbBuffer(dbName: string) {
@@ -14,85 +11,38 @@ class DatabaseService {
   }
 
   static async getAllRecords(dbName: string) {
-    if (isElectron) {
-      let records = await window
-        .require("electron")
-        .ipcRenderer.invoke("database-command", {
-          statement: "getAllStatement",
-          statementType: "string",
-          executeType: "all",
-          dbName: dbName,
-          storagePath: getStorageLocation(),
-        });
+    if (ConfigService.getReaderConfig("isUseLocal") === "yes") {
+      let sqlUtil = new SqlUtil();
+      let dbBuffer = await LocalFileManager.readFile(dbName + ".db", "config");
+      if (!dbBuffer) {
+        return [];
+      }
+      let records = sqlUtil.dbBufferToJson(dbBuffer, dbName);
       return records;
     } else {
-      if (ConfigService.getReaderConfig("isUseLocal") === "yes") {
-        let sqlUtil = new SqlUtil();
-        let dbBuffer = await LocalFileManager.readFile(
-          dbName + ".db",
-          "config"
-        );
-        if (!dbBuffer) {
-          return [];
-        }
-        let records = sqlUtil.dbBufferToJson(dbBuffer, dbName);
-        return records;
-      } else {
-        const records = (await localforage.getItem(dbName)) || [];
-        return records;
-      }
+      const records = (await localforage.getItem(dbName)) || [];
+      return records;
     }
   }
   static async saveAllRecords(records: any[], dbName: string, isRecord = true) {
-    if (isElectron) {
-      for (let record of records) {
-        try {
-          await window
-            .require("electron")
-            .ipcRenderer.invoke("database-command", {
-              statement: "saveStatement",
-              statementType: "string",
-              executeType: "run",
-              dbName: dbName,
-              data: record,
-              storagePath: getStorageLocation(),
-            });
-        } catch (error) {
-          console.error("Error saving record:", error);
-        }
-
-        if (isRecord) {
-          ConfigService.setSyncRecord(
-            {
-              type: "database",
-              catergory: "sqlite",
-              name: dbName,
-              key: record.key,
-            },
-            { operation: "save", time: Date.now() }
-          );
-        }
-      }
+    if (ConfigService.getReaderConfig("isUseLocal") === "yes") {
+      let sqlUtil = new SqlUtil();
+      let dbBuffer = await sqlUtil.JsonToDbBuffer(records, dbName);
+      await LocalFileManager.saveFile(dbName + ".db", dbBuffer, "config");
     } else {
-      if (ConfigService.getReaderConfig("isUseLocal") === "yes") {
-        let sqlUtil = new SqlUtil();
-        let dbBuffer = await sqlUtil.JsonToDbBuffer(records, dbName);
-        await LocalFileManager.saveFile(dbName + ".db", dbBuffer, "config");
-      } else {
-        await localforage.setItem(dbName, records);
-      }
-      for (let record of records) {
-        if (isRecord) {
-          ConfigService.setSyncRecord(
-            {
-              type: "database",
-              catergory: "sqlite",
-              name: dbName,
-              key: record.key,
-            },
-            { operation: "save", time: Date.now() }
-          );
-        }
+      await localforage.setItem(dbName, records);
+    }
+    for (let record of records) {
+      if (isRecord) {
+        ConfigService.setSyncRecord(
+          {
+            type: "database",
+            catergory: "sqlite",
+            name: dbName,
+            key: record.key,
+          },
+          { operation: "save", time: Date.now() }
+        );
       }
     }
   }
@@ -111,37 +61,16 @@ class DatabaseService {
         );
       }
     }
-    if (isElectron) {
-      await window.require("electron").ipcRenderer.invoke("database-command", {
-        statement: "deleteAllStatement",
-        statementType: "string",
-        executeType: "run",
-        dbName: dbName,
-        storagePath: getStorageLocation(),
-      });
+    if (ConfigService.getReaderConfig("isUseLocal") === "yes") {
+      await LocalFileManager.deleteFile(dbName + ".db", "config");
     } else {
-      if (ConfigService.getReaderConfig("isUseLocal") === "yes") {
-        await LocalFileManager.deleteFile(dbName + ".db", "config");
-      } else {
-        await localforage.removeItem(dbName);
-      }
+      await localforage.removeItem(dbName);
     }
   }
   static async saveRecord(record: any, dbName: string, isRecord = true) {
-    if (isElectron) {
-      await window.require("electron").ipcRenderer.invoke("database-command", {
-        statement: "saveStatement",
-        statementType: "string",
-        executeType: "run",
-        dbName: dbName,
-        data: record,
-        storagePath: getStorageLocation(),
-      });
-    } else {
-      let records = await this.getAllRecords(dbName);
-      records.push(record);
-      await this.saveAllRecords(records, dbName);
-    }
+    let records = await this.getAllRecords(dbName);
+    records.push(record);
+    await this.saveAllRecords(records, dbName);
     if (isRecord) {
       ConfigService.setSyncRecord(
         {
@@ -155,23 +84,12 @@ class DatabaseService {
     }
   }
   static async deleteRecord(key: string, dbName: string, isRecord = true) {
-    if (isElectron) {
-      await window.require("electron").ipcRenderer.invoke("database-command", {
-        statement: "deleteStatement",
-        statementType: "string",
-        executeType: "run",
-        dbName: dbName,
-        data: key,
-        storagePath: getStorageLocation(),
-      });
+    let records = await this.getAllRecords(dbName);
+    records = records.filter((b) => b.key !== key);
+    if (records.length === 0) {
+      await this.deleteAllRecords(dbName);
     } else {
-      let records = await this.getAllRecords(dbName);
-      records = records.filter((b) => b.key !== key);
-      if (records.length === 0) {
-        await this.deleteAllRecords(dbName);
-      } else {
-        await this.saveAllRecords(records, dbName);
-      }
+      await this.saveAllRecords(records, dbName);
     }
     if (isRecord) {
       ConfigService.setSyncRecord(
@@ -181,25 +99,14 @@ class DatabaseService {
     }
   }
   static async updateRecord(record: any, dbName: string, isRecord = true) {
-    if (isElectron) {
-      await window.require("electron").ipcRenderer.invoke("database-command", {
-        statement: "updateStatement",
-        statementType: "string",
-        executeType: "run",
-        dbName: dbName,
-        data: record,
-        storagePath: getStorageLocation(),
-      });
-    } else {
-      let records = await this.getAllRecords(dbName);
-      records = records.map((b) => {
-        if (b.key === record.key) {
-          return record;
-        }
-        return b;
-      });
-      await this.saveAllRecords(records, dbName);
-    }
+    let records = await this.getAllRecords(dbName);
+    records = records.map((b) => {
+      if (b.key === record.key) {
+        return record;
+      }
+      return b;
+    });
+    await this.saveAllRecords(records, dbName);
     if (isRecord) {
       ConfigService.setSyncRecord(
         {
@@ -213,124 +120,38 @@ class DatabaseService {
     }
   }
   static async getRecord(key: string, dbName: string): Promise<any | null> {
-    if (isElectron) {
-      let record = await window
-        .require("electron")
-        .ipcRenderer.invoke("database-command", {
-          statement: "getStatement",
-          statementType: "string",
-          executeType: "get",
-          dbName: dbName,
-          data: key,
-          storagePath: getStorageLocation(),
-        });
-      return record;
-    } else {
-      let records = await this.getAllRecords(dbName);
-      for (let record of records) {
-        if (record.key === key) {
-          return record;
-        }
+    let records = await this.getAllRecords(dbName);
+    for (let record of records) {
+      if (record.key === key) {
+        return record;
       }
-      return null;
     }
+    return null;
   }
   static async getAllRecordKeys(dbName: string): Promise<string[]> {
-    if (isElectron) {
-      let keys = await window
-        .require("electron")
-        .ipcRenderer.invoke("database-command", {
-          statement: "getKeysStatement",
-          statementType: "string",
-          executeType: "all",
-          dbName: dbName,
-          storagePath: getStorageLocation(),
-        });
-      return keys.map((k: any) => k.key);
-    } else {
-      let records = await this.getAllRecords(dbName);
-      return records.map((record) => record.key);
-    }
+    let records = await this.getAllRecords(dbName);
+    return records.map((record) => record.key);
   }
   static async getRecordsByBookKey(
     bookKey: string,
     dbName: string
   ): Promise<any[]> {
-    if (isElectron) {
-      let records = await window
-        .require("electron")
-        .ipcRenderer.invoke("database-command", {
-          statement: "getByBookKeyStatement",
-          statementType: "string",
-          executeType: "all",
-          dbName: dbName,
-          data: bookKey,
-          storagePath: getStorageLocation(),
-        });
-      return records;
-    } else {
-      let records = await this.getAllRecords(dbName);
-      return records.filter((record) => record.bookKey === bookKey);
-    }
+    let records = await this.getAllRecords(dbName);
+    return records.filter((record) => record.bookKey === bookKey);
   }
   static async getRecordsByBookKeys(
     bookKeys: string[],
     dbName: string
   ): Promise<any[]> {
-    if (isElectron) {
-      let records = await window
-        .require("electron")
-        .ipcRenderer.invoke("database-command", {
-          statement: "getByBookKeysStatement",
-          statementType: "function",
-          executeType: "all",
-          dbName: dbName,
-          data: bookKeys,
-          storagePath: getStorageLocation(),
-        });
-      return records;
-    } else {
-      let records = await this.getAllRecords(dbName);
-      return records.filter((record) => bookKeys.includes(record.bookKey));
-    }
+    let records = await this.getAllRecords(dbName);
+    return records.filter((record) => bookKeys.includes(record.bookKey));
   }
   static async updateAllRecords(
     records: any[],
     dbName: string,
     isRecord = true
   ) {
-    if (isElectron) {
-      for (let record of records) {
-        try {
-          await window
-            .require("electron")
-            .ipcRenderer.invoke("database-command", {
-              statement: "updateStatement",
-              statementType: "string",
-              executeType: "run",
-              dbName: dbName,
-              data: record,
-              storagePath: getStorageLocation(),
-            });
-        } catch (error) {
-          console.error("Error updating record:", error);
-        }
-
-        if (isRecord) {
-          ConfigService.setSyncRecord(
-            {
-              type: "database",
-              catergory: "sqlite",
-              name: dbName,
-              key: record.key,
-            },
-            { operation: "update", time: Date.now() }
-          );
-        }
-      }
-    } else {
-      await this.saveAllRecords(records, dbName);
-    }
+    await this.saveAllRecords(records, dbName);
     for (let record of records) {
       if (isRecord) {
         ConfigService.setSyncRecord(
@@ -358,23 +179,12 @@ class DatabaseService {
         { operation: "delete", time: Date.now() }
       );
     }
-    if (isElectron) {
-      await window.require("electron").ipcRenderer.invoke("database-command", {
-        statement: "deleteByBookKeyStatement",
-        statementType: "string",
-        executeType: "run",
-        dbName: dbName,
-        data: bookKey,
-        storagePath: getStorageLocation(),
-      });
+    let allRecords = await this.getAllRecords(dbName);
+    allRecords = allRecords.filter((b) => b.bookKey !== bookKey);
+    if (allRecords.length === 0) {
+      await this.deleteAllRecords(dbName);
     } else {
-      let records = await this.getAllRecords(dbName);
-      records = records.filter((b) => b.bookKey !== bookKey);
-      if (records.length === 0) {
-        await this.deleteAllRecords(dbName);
-      } else {
-        await this.saveAllRecords(records, dbName);
-      }
+      await this.saveAllRecords(allRecords, dbName);
     }
   }
   static async dumpDatabase(dbName: string) {
